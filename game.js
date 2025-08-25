@@ -158,11 +158,11 @@ const createScene = function () {
     createTerrain(scene);
     
     // Create bigger rocks for cover
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 35; i++) {
         const diameter = Math.random() * 4 + 4;
         const rock = BABYLON.MeshBuilder.CreateSphere("rock" + i, {diameter: diameter}, scene);
-        rock.position.x = Math.random() * 80 - 40;
-        rock.position.z = Math.random() * 80 - 40;
+        rock.position.x = Math.random() * 200 - 100;
+        rock.position.z = Math.random() * 200 - 100;
         rock.position.y = rock.scaling.y / 2;
         rock.scaling.y = Math.random() * 0.4 + 0.6;
         
@@ -179,9 +179,9 @@ const createScene = function () {
     }
     
     // Create trees
-    for (let i = 0; i < 30; i++) {
-        const x = Math.random() * 80 - 40;
-        const z = Math.random() * 80 - 40;
+    for (let i = 0; i < 60; i++) {
+        const x = Math.random() * 200 - 100;
+        const z = Math.random() * 200 - 100;
         createTree(scene, x, z);
         
         // Track tree position for enemy spawning
@@ -207,7 +207,7 @@ const createScene = function () {
 
 function createTerrain(scene) {
     // Main grass ground
-    const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 120, height: 120}, scene);
+    const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 240, height: 240}, scene);
     const grassMaterial = new BABYLON.StandardMaterial("grassMaterial", scene);
     grassMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.7, 0.2);
     mainGround.material = grassMaterial;
@@ -326,6 +326,7 @@ function findSafeSpawnPosition(playerPosition = new BABYLON.Vector3(0, 0, 0)) {
         }
         
         if (isSafe) {
+            
             return position;
         }
     }
@@ -333,12 +334,14 @@ function findSafeSpawnPosition(playerPosition = new BABYLON.Vector3(0, 0, 0)) {
     // Fallback: spawn far from center if no safe position found
     const angle = Math.random() * Math.PI * 2;
     const distance = 25 + Math.random() * 10;
+    const groundHeight = getGroundHeight(scene, Math.cos(angle) * distance, Math.sin(angle) * distance);
     return new BABYLON.Vector3(
         Math.cos(angle) * distance,
-        2,
+       2, // 1 unit above ground for robot feet
         Math.sin(angle) * distance
     );
 }
+
 
 function createEnemy(scene) {
     // Create robot body (main box)
@@ -378,19 +381,64 @@ function createEnemy(scene) {
     leftEye.material = eyeMaterial;
     rightEye.material = eyeMaterial;
     
-    // Robot arms
-    const leftArm = BABYLON.MeshBuilder.CreateBox("leftArm", {width: 0.5, height: 1.5, depth: 0.5}, scene);
-    leftArm.position = new BABYLON.Vector3(-1.2, 0, 0);
+    // Add a mouth/face plate
+    const mouth = BABYLON.MeshBuilder.CreateBox("mouth", {width: 0.4, height: 0.1, depth: 0.05}, scene);
+    mouth.position = new BABYLON.Vector3(0, 1.4, 0.45);
+    mouth.parent = enemy;
+    
+    const mouthMaterial = new BABYLON.StandardMaterial("mouthMaterial", scene);
+    mouthMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+    mouth.material = mouthMaterial;
+    
+    // Add antenna/sensor
+    const antenna = BABYLON.MeshBuilder.CreateCylinder("antenna", {height: 0.5, diameter: 0.1}, scene);
+    antenna.position = new BABYLON.Vector3(0, 2.2, 0);
+    antenna.parent = enemy;
+    
+    const antennaMaterial = new BABYLON.StandardMaterial("antennaMaterial", scene);
+    antennaMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
+    antennaMaterial.emissiveColor = new BABYLON.Color3(0.5, 0, 0);
+    antenna.material = antennaMaterial;
+    
+    // Robot arms (positioned for animation)
+    const leftArm = BABYLON.MeshBuilder.CreateBox("leftArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
+    leftArm.position = new BABYLON.Vector3(-1, 0.2, 0);
     leftArm.parent = enemy;
     leftArm.material = material;
     
-    const rightArm = BABYLON.MeshBuilder.CreateBox("rightArm", {width: 0.5, height: 1.5, depth: 0.5}, scene);
-    rightArm.position = new BABYLON.Vector3(1.2, 0, 0);
+    const rightArm = BABYLON.MeshBuilder.CreateBox("rightArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
+    rightArm.position = new BABYLON.Vector3(1, 0.2, 0);
     rightArm.parent = enemy;
     rightArm.material = material;
     
-    // Store references to robot parts
-    enemy.robotParts = {head, leftEye, rightEye, leftArm, rightArm};
+    // Robot legs for walking animation
+    const leftLeg = BABYLON.MeshBuilder.CreateBox("leftLeg", {width: 0.4, height: 1.2, depth: 0.4}, scene);
+    leftLeg.position = new BABYLON.Vector3(-0.4, -1, 0);
+    leftLeg.parent = enemy;
+    leftLeg.material = material;
+    
+    const rightLeg = BABYLON.MeshBuilder.CreateBox("rightLeg", {width: 0.4, height: 1.2, depth: 0.4}, scene);
+    rightLeg.position = new BABYLON.Vector3(0.4, -1, 0);
+    rightLeg.parent = enemy;
+    rightLeg.material = material;
+    
+    // Add feet
+    const leftFoot = BABYLON.MeshBuilder.CreateBox("leftFoot", {width: 0.6, height: 0.2, depth: 0.8}, scene);
+    leftFoot.position = new BABYLON.Vector3(0, -0.7, 0.2);
+    leftFoot.parent = leftLeg;
+    leftFoot.material = material;
+    
+    const rightFoot = BABYLON.MeshBuilder.CreateBox("rightFoot", {width: 0.6, height: 0.2, depth: 0.8}, scene);
+    rightFoot.position = new BABYLON.Vector3(0, -0.7, 0.2);
+    rightFoot.parent = rightLeg;
+    rightFoot.material = material;
+    
+    // Store references to robot parts for animation
+    enemy.robotParts = {
+        head, leftEye, rightEye, mouth, antenna,
+        leftArm, rightArm, leftLeg, rightLeg, 
+        leftFoot, rightFoot
+    };
     
     enemy.health = 60;
     enemy.maxHealth = 60;
@@ -406,6 +454,11 @@ function createEnemy(scene) {
     enemy.poisonTime = 0;
     enemy.poisonDamage = 0;
     enemy.lastPoisonTick = 0;
+    
+    // Animation properties
+    enemy.animationTime = 0;
+    enemy.isMoving = false;
+    enemy.lastDirection = new BABYLON.Vector3(0, 0, 1);
     
     // Create health bar above robot
     createHealthBar(scene, enemy);
@@ -485,6 +538,11 @@ function createBuddy(scene) {
     buddy.healRange = 2; // Heal when within 2 units of player
     buddy.checkCollisions = true;
     
+    // Buddy weapon system
+    buddy.weapons = ["Pistol"]; // Start with basic pistol
+    buddy.currentWeapon = 0;
+    buddy.weaponsCollected = 1;
+    
     // Create health bar for buddy
     createHealthBar(scene, buddy);
     
@@ -531,6 +589,28 @@ function updateBuddy(scene, camera, currentTime) {
         
         const direction = targetPosition.subtract(buddy.position).normalize();
         buddy.position.addInPlace(direction.scale(buddy.speed));
+    }
+    
+    // Priority 5: Check for weapon pickups
+    for (let i = gameState.weaponDrops.length - 1; i >= 0; i--) {
+        const drop = gameState.weaponDrops[i];
+        const distance = BABYLON.Vector3.Distance(buddy.position, drop.position);
+        
+        if (distance < 2.5) { // Slightly larger pickup range than player
+            // Pick up weapon if buddy doesn't have it
+            if (!buddy.weapons.includes(drop.weaponName)) {
+                buddy.weapons.push(drop.weaponName);
+                buddy.weaponsCollected++;
+                
+                // Switch to new weapon
+                buddy.currentWeapon = buddy.weapons.length - 1;
+                
+                // Remove pickup
+                drop.dispose();
+                gameState.weaponDrops.splice(i, 1);
+                break; // Only pick up one weapon per frame
+            }
+        }
     }
 }
 
@@ -590,25 +670,29 @@ function createHealingEffect(scene, target) {
 }
 
 function buddyShoot(scene, buddy, targetEnemy) {
-    const projectile = BABYLON.MeshBuilder.CreateSphere("buddyProjectile", {diameter: 0.3}, scene);
-    projectile.position = buddy.position.clone();
-    projectile.position.y += 1;
+    // Get buddy's current weapon (same system as player)
+    const weaponType = buddy.weapons[buddy.currentWeapon];
+    const weapon = getWeaponConfig(weaponType);
     
     // Calculate direction to enemy
-    projectile.direction = targetEnemy.position.subtract(buddy.position).normalize();
-    projectile.speed = 2.5;
-    projectile.damage = 25; // Buddy is helpful but not overpowered
+    const startPosition = buddy.position.clone();
+    startPosition.y += 1;
+    const direction = targetEnemy.position.subtract(buddy.position).normalize();
     
-    // Blue buddy projectiles
-    const material = new BABYLON.StandardMaterial("buddyProjectileMaterial", scene);
-    material.diffuseColor = new BABYLON.Color3(0.2, 0.5, 1);
-    material.emissiveColor = new BABYLON.Color3(0.1, 0.3, 0.8);
-    projectile.material = material;
+    // Create projectiles using the weapon's system
+    const projectiles = weapon.createProjectile(scene, startPosition, direction);
     
-    gameState.buddyProjectiles.push(projectile);
+    // Add all projectiles to buddy projectiles array
+    projectiles.forEach(projectile => {
+        // Reduce buddy damage by 20% to keep them helpful but not overpowered
+        if (projectile.damage) {
+            projectile.damage = Math.floor(projectile.damage * 0.8);
+        }
+        gameState.buddyProjectiles.push(projectile);
+    });
     
-    // Play buddy weapon sound (higher pitched than player weapons)
-    createBeepSound(500, 0.2, 0.1);
+    // Play weapon-specific sound (slightly higher pitched for buddy)
+    playBuddyWeaponSound(weaponType);
 }
 
 function createHealthBar(scene, enemy) {
@@ -1336,15 +1420,31 @@ function updateGame(scene, camera) {
         
         // Robot AI: shoot if in range, otherwise move closer
         if (distance < 15 && distance > 3 && currentTime - enemy.lastShot > 1500) {
+            // Face the player when shooting
+            const shootDirection = camera.position.subtract(enemy.position).normalize();
+            rotateEnemyTowards(enemy, shootDirection);
+            
+            // Shooting stance animation
+            animateRobotShooting(enemy);
+            
             // Shoot at player
             enemyShoot(scene, enemy, camera);
             playRobotShootSound(enemy, camera);
             enemy.lastShot = currentTime;
+            enemy.isMoving = false;
         } else if (distance > 3) {
             // Move towards player with obstacle avoidance
             moveEnemyWithAvoidance(enemy, camera);
             // Play footstep sounds when moving
             playRobotFootstep(enemy, camera, distance);
+        } else {
+            // Close range - face player but don't move
+            const faceDirection = camera.position.subtract(enemy.position).normalize();
+            rotateEnemyTowards(enemy, faceDirection);
+            enemy.isMoving = false;
+            
+            // Idle animation
+            animateRobotIdle(enemy);
         }
         
         // Melee attack if very close
@@ -1642,13 +1742,135 @@ function moveEnemyWithAvoidance(enemy, camera) {
         moveDirection = avoidDirection;
     }
     
+    // Rotate enemy to face movement direction
+    rotateEnemyTowards(enemy, moveDirection);
+    
+    // Set moving state for animation
+    enemy.isMoving = true;
+    enemy.lastDirection = moveDirection;
+    
     // Move the enemy
     enemy.position.addInPlace(moveDirection.scale(enemy.speed));
+    
+    // Animate walking
+    animateRobotWalking(enemy);
     
     // Play footstep sound based on distance to player
     const distanceToPlayer = BABYLON.Vector3.Distance(enemy.position, camera.position);
     if (distanceToPlayer < 20) { // Only play if close enough to hear
         playRobotFootstep(enemy, camera, distanceToPlayer);
+    }
+}
+
+function rotateEnemyTowards(enemy, direction) {
+    // Calculate the angle to face the direction
+    const angle = Math.atan2(direction.x, direction.z);
+    enemy.rotation.y = angle;
+}
+
+function animateRobotWalking(enemy) {
+    if (!enemy.robotParts) return;
+    
+    // Increment animation time
+    enemy.animationTime += 0.15;
+    
+    // Animate legs walking
+    const legSwing = Math.sin(enemy.animationTime) * 0.3;
+    const armSwing = Math.sin(enemy.animationTime + Math.PI) * 0.2; // Arms opposite to legs
+    
+    if (enemy.robotParts.leftLeg) {
+        enemy.robotParts.leftLeg.rotation.x = legSwing;
+    }
+    if (enemy.robotParts.rightLeg) {
+        enemy.robotParts.rightLeg.rotation.x = -legSwing;
+    }
+    if (enemy.robotParts.leftArm) {
+        enemy.robotParts.leftArm.rotation.x = armSwing;
+    }
+    if (enemy.robotParts.rightArm) {
+        enemy.robotParts.rightArm.rotation.x = -armSwing;
+    }
+    
+    // Slight head bob while walking
+    if (enemy.robotParts.head) {
+        enemy.robotParts.head.position.y = 1.5 + Math.sin(enemy.animationTime * 2) * 0.05;
+    }
+    
+    // Make antenna wiggle
+    if (enemy.robotParts.antenna) {
+        enemy.robotParts.antenna.rotation.z = Math.sin(enemy.animationTime * 1.5) * 0.1;
+    }
+}
+
+function animateRobotShooting(enemy) {
+    if (!enemy.robotParts) return;
+    
+    // Shooting stance - raise arms and point toward target
+    if (enemy.robotParts.rightArm) {
+        enemy.robotParts.rightArm.rotation.x = -0.5; // Point arm forward
+        enemy.robotParts.rightArm.rotation.z = -0.2;
+    }
+    if (enemy.robotParts.leftArm) {
+        enemy.robotParts.leftArm.rotation.x = -0.3; // Support arm
+    }
+    
+    // Eyes flash more intensely when shooting
+    enemy.animationTime += 0.3;
+    if (enemy.robotParts.leftEye && enemy.robotParts.rightEye) {
+        const intensity = 1 + Math.sin(enemy.animationTime * 5) * 0.5;
+        enemy.robotParts.leftEye.material.emissiveColor = new BABYLON.Color3(intensity, 0, 0);
+        enemy.robotParts.rightEye.material.emissiveColor = new BABYLON.Color3(intensity, 0, 0);
+    }
+    
+    // Reset legs to standing position
+    if (enemy.robotParts.leftLeg) {
+        enemy.robotParts.leftLeg.rotation.x = 0;
+    }
+    if (enemy.robotParts.rightLeg) {
+        enemy.robotParts.rightLeg.rotation.x = 0;
+    }
+}
+
+function animateRobotIdle(enemy) {
+    if (!enemy.robotParts) return;
+    
+    // Gentle idle animation
+    enemy.animationTime += 0.05;
+    
+    // Subtle breathing-like motion
+    const breathe = Math.sin(enemy.animationTime) * 0.02;
+    if (enemy.robotParts.head) {
+        enemy.robotParts.head.position.y = 1.5 + breathe;
+    }
+    
+    // Arms relaxed at sides
+    if (enemy.robotParts.leftArm) {
+        enemy.robotParts.leftArm.rotation.x = breathe * 0.5;
+        enemy.robotParts.leftArm.rotation.z = 0;
+    }
+    if (enemy.robotParts.rightArm) {
+        enemy.robotParts.rightArm.rotation.x = -breathe * 0.5;
+        enemy.robotParts.rightArm.rotation.z = 0;
+    }
+    
+    // Legs stable
+    if (enemy.robotParts.leftLeg) {
+        enemy.robotParts.leftLeg.rotation.x = 0;
+    }
+    if (enemy.robotParts.rightLeg) {
+        enemy.robotParts.rightLeg.rotation.x = 0;
+    }
+    
+    // Antenna slowly rotates
+    if (enemy.robotParts.antenna) {
+        enemy.robotParts.antenna.rotation.y = enemy.animationTime * 0.5;
+    }
+    
+    // Eyes dim and brighten slowly
+    if (enemy.robotParts.leftEye && enemy.robotParts.rightEye) {
+        const eyeGlow = 0.8 + Math.sin(enemy.animationTime * 0.7) * 0.2;
+        enemy.robotParts.leftEye.material.emissiveColor = new BABYLON.Color3(eyeGlow, 0, 0);
+        enemy.robotParts.rightEye.material.emissiveColor = new BABYLON.Color3(eyeGlow, 0, 0);
     }
 }
 
@@ -1799,7 +2021,11 @@ function freezeEnemy(enemy) {
         body: enemy.material,
         head: enemy.robotParts.head.material,
         leftArm: enemy.robotParts.leftArm.material,
-        rightArm: enemy.robotParts.rightArm.material
+        rightArm: enemy.robotParts.rightArm.material,
+        leftLeg: enemy.robotParts.leftLeg ? enemy.robotParts.leftLeg.material : null,
+        rightLeg: enemy.robotParts.rightLeg ? enemy.robotParts.rightLeg.material : null,
+        leftFoot: enemy.robotParts.leftFoot ? enemy.robotParts.leftFoot.material : null,
+        rightFoot: enemy.robotParts.rightFoot ? enemy.robotParts.rightFoot.material : null
     };
     
     // Apply ice material to all parts
@@ -1807,6 +2033,10 @@ function freezeEnemy(enemy) {
     enemy.robotParts.head.material = iceMaterial;
     enemy.robotParts.leftArm.material = iceMaterial;
     enemy.robotParts.rightArm.material = iceMaterial;
+    if (enemy.robotParts.leftLeg) enemy.robotParts.leftLeg.material = iceMaterial;
+    if (enemy.robotParts.rightLeg) enemy.robotParts.rightLeg.material = iceMaterial;
+    if (enemy.robotParts.leftFoot) enemy.robotParts.leftFoot.material = iceMaterial;
+    if (enemy.robotParts.rightFoot) enemy.robotParts.rightFoot.material = iceMaterial;
     
     // Create ice crystals effect
     const crystals = BABYLON.MeshBuilder.CreateBox("crystals", {size: 3}, enemy.getScene());
@@ -1828,6 +2058,18 @@ function unfreezeEnemy(enemy) {
         enemy.robotParts.head.material = enemy.originalMaterials.head;
         enemy.robotParts.leftArm.material = enemy.originalMaterials.leftArm;
         enemy.robotParts.rightArm.material = enemy.originalMaterials.rightArm;
+        if (enemy.originalMaterials.leftLeg && enemy.robotParts.leftLeg) {
+            enemy.robotParts.leftLeg.material = enemy.originalMaterials.leftLeg;
+        }
+        if (enemy.originalMaterials.rightLeg && enemy.robotParts.rightLeg) {
+            enemy.robotParts.rightLeg.material = enemy.originalMaterials.rightLeg;
+        }
+        if (enemy.originalMaterials.leftFoot && enemy.robotParts.leftFoot) {
+            enemy.robotParts.leftFoot.material = enemy.originalMaterials.leftFoot;
+        }
+        if (enemy.originalMaterials.rightFoot && enemy.robotParts.rightFoot) {
+            enemy.robotParts.rightFoot.material = enemy.originalMaterials.rightFoot;
+        }
     }
     
     // Remove ice crystals
@@ -2049,6 +2291,28 @@ function playWeaponSound(weaponName) {
     }
     
     createBeepSound(frequency, duration, 0.15);
+}
+
+function playBuddyWeaponSound(weaponName) {
+    // Same weapon sounds as player but 50% higher pitched for buddy
+    let frequency = 300;
+    let duration = 0.15;
+    
+    if (weaponName.includes('Laser')) {
+        frequency = 800;
+        duration = 0.3;
+    } else if (weaponName.includes('Rocket')) {
+        frequency = 150;
+        duration = 0.4;
+    } else if (weaponName.includes('Magic')) {
+        frequency = 600;
+        duration = 0.25;
+    }
+    
+    // Make it 50% higher pitched for buddy
+    frequency = Math.floor(frequency * 1.5);
+    
+    createBeepSound(frequency, duration, 0.1); // Slightly quieter than player
 }
 
 function playHitSound() {
