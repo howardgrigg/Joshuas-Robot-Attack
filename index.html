@@ -48,18 +48,90 @@
             font-size: 14px;
             z-index: 1000;
         }
+        
+        #welcomeScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            color: white;
+            text-align: center;
+        }
+        
+        #gameTitle {
+            font-size: 4rem;
+            font-weight: bold;
+            margin-bottom: 2rem;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.7);
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { filter: drop-shadow(0 0 20px rgba(255,107,107,0.4)); }
+            to { filter: drop-shadow(0 0 30px rgba(78,205,196,0.6)); }
+        }
+        
+        #startInstructions {
+            font-size: 1.2rem;
+            line-height: 1.6;
+        }
+        
+        #startInstructions strong {
+            font-size: 1.5rem;
+            color: #4ecdc4;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        #controls {
+            background: rgba(255,255,255,0.1);
+            padding: 1rem;
+            border-radius: 10px;
+            margin-top: 1rem;
+        }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <div id="crosshair"></div>
-    <div id="ui">
-        <div>Health: <span id="health">100</span></div>
-        <div>Weapon: <span id="currentWeapon">Blaster</span></div>
-        <div>Enemies: <span id="enemyCount">0</span></div>
+    <div id="welcomeScreen">
+        <h1 id="gameTitle">JOSHUA'S ROBOT ATTACK</h1>
+        <div id="startInstructions">
+            <p>Fight the robot invasion!</p>
+            <p>Collect new weapons by defeating robots</p>
+            <p><strong>Click to Start Game</strong></p>
+            <br>
+            <div id="controls">
+                <p>WASD: Move | Mouse: Look | SPACE: Jump</p>
+                <p>Click: Shoot | Number Keys: Switch Weapons</p>
+                <p>Find cover behind rocks and trees!</p>
+            </div>
+        </div>
     </div>
-    <div id="instructions">
-        WASD: Move | Mouse: Look | Click: Shoot | 1-5: Change Weapon
+    
+    <canvas id="gameCanvas" style="display: none;"></canvas>
+    <div id="crosshair" style="display: none;"></div>
+    <div id="ui" style="display: none;">
+        <div>Health: <span id="health">100</span></div>
+        <div>Weapon: <span id="currentWeapon">Basic Blaster</span></div>
+        <div>Enemies: <span id="enemyCount">0</span></div>
+        <div>Weapons: <span id="weaponCount">1</span>/50</div>
+    </div>
+    <div id="instructions" style="display: none;">
+        Kill robots to collect new weapons! | Numbers 1-9: Switch Weapons
     </div>
     
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
