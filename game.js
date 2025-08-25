@@ -118,8 +118,10 @@ let gameState = {
     enemies: [],
     projectiles: [],
     enemyProjectiles: [],
+    buddyProjectiles: [],
     weaponDrops: [],
     obstacles: [], // Track obstacle positions for better enemy spawning
+    buddy: null, // Player's protective companion
     sounds: {
         robotStep: null,
         robotShoot: null,
@@ -152,12 +154,8 @@ const createScene = function () {
     // Initialize sound system
     initializeSounds(scene);
     
-    // Create large ground
-    const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 100, height: 100}, scene);
-    const groundMaterial = new BABYLON.StandardMaterial("groundMaterial", scene);
-    groundMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.7, 0.2);
-    ground.material = groundMaterial;
-    ground.checkCollisions = true;
+    // Create diverse terrain
+    createTerrain(scene);
     
     // Create bigger rocks for cover
     for (let i = 0; i < 15; i++) {
@@ -193,6 +191,9 @@ const createScene = function () {
         });
     }
     
+    // Create protective buddy
+    createBuddy(scene);
+    
     // Create enemies
     for (let i = 0; i < 8; i++) {
         createEnemy(scene);
@@ -203,6 +204,85 @@ const createScene = function () {
     
     return scene;
 };
+
+function createTerrain(scene) {
+    // Main grass ground
+    const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 120, height: 120}, scene);
+    const grassMaterial = new BABYLON.StandardMaterial("grassMaterial", scene);
+    grassMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.7, 0.2);
+    mainGround.material = grassMaterial;
+    mainGround.checkCollisions = true;
+    
+    // Add rolling hills
+    for (let i = 0; i < 8; i++) {
+        const hill = BABYLON.MeshBuilder.CreateSphere("hill" + i, {diameter: Math.random() * 20 + 15}, scene);
+        hill.position.x = Math.random() * 100 - 50;
+        hill.position.z = Math.random() * 100 - 50;
+        hill.position.y = -(Math.random() * 8 + 5); // Partially buried
+        hill.scaling.y = Math.random() * 0.3 + 0.2;
+        
+        const hillMaterial = new BABYLON.StandardMaterial("hillMaterial" + i, scene);
+        hillMaterial.diffuseColor = new BABYLON.Color3(0.25, 0.6, 0.18);
+        hill.material = hillMaterial;
+        hill.checkCollisions = true;
+    }
+    
+    // Sandy patches
+    for (let i = 0; i < 6; i++) {
+        const sandPatch = BABYLON.MeshBuilder.CreateGround("sand" + i, {width: Math.random() * 15 + 10, height: Math.random() * 15 + 10}, scene);
+        sandPatch.position.x = Math.random() * 80 - 40;
+        sandPatch.position.z = Math.random() * 80 - 40;
+        sandPatch.position.y = 0.05;
+        
+        const sandMaterial = new BABYLON.StandardMaterial("sandMaterial" + i, scene);
+        sandMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.7, 0.4);
+        sandPatch.material = sandMaterial;
+    }
+    
+    // Rocky areas
+    for (let i = 0; i < 4; i++) {
+        const rockArea = BABYLON.MeshBuilder.CreateGround("rockArea" + i, {width: Math.random() * 12 + 8, height: Math.random() * 12 + 8}, scene);
+        rockArea.position.x = Math.random() * 70 - 35;
+        rockArea.position.z = Math.random() * 70 - 35;
+        rockArea.position.y = 0.02;
+        
+        const rockMaterial = new BABYLON.StandardMaterial("rockAreaMaterial" + i, scene);
+        rockMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+        rockArea.material = rockMaterial;
+    }
+    
+    // Add some elevation platforms
+    for (let i = 0; i < 5; i++) {
+        const platform = BABYLON.MeshBuilder.CreateCylinder("platform" + i, {height: Math.random() * 3 + 2, diameter: Math.random() * 8 + 6}, scene);
+        platform.position.x = Math.random() * 60 - 30;
+        platform.position.z = Math.random() * 60 - 30;
+        platform.position.y = platform.scaling.y / 2;
+        
+        const platformMaterial = new BABYLON.StandardMaterial("platformMaterial" + i, scene);
+        platformMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.3, 0.2);
+        platform.material = platformMaterial;
+        platform.checkCollisions = true;
+        
+        // Track platforms as obstacles
+        gameState.obstacles.push({
+            position: new BABYLON.Vector3(platform.position.x, 0, platform.position.z),
+            radius: (platform.scaling.x * 6) / 2 + 1
+        });
+    }
+    
+    // Small ponds/water features
+    for (let i = 0; i < 3; i++) {
+        const pond = BABYLON.MeshBuilder.CreateGround("pond" + i, {width: Math.random() * 8 + 5, height: Math.random() * 8 + 5}, scene);
+        pond.position.x = Math.random() * 50 - 25;
+        pond.position.z = Math.random() * 50 - 25;
+        pond.position.y = -0.1;
+        
+        const waterMaterial = new BABYLON.StandardMaterial("waterMaterial" + i, scene);
+        waterMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.4, 0.8);
+        waterMaterial.specularColor = new BABYLON.Color3(0.5, 0.5, 1);
+        pond.material = waterMaterial;
+    }
+}
 
 function createTree(scene, x, z) {
     // Bigger tree trunk for cover
@@ -331,6 +411,204 @@ function createEnemy(scene) {
     createHealthBar(scene, enemy);
     
     gameState.enemies.push(enemy);
+}
+
+function createBuddy(scene) {
+    // Create buddy robot (friendly design)
+    const buddy = BABYLON.MeshBuilder.CreateBox("buddy", {size: 1.8}, scene);
+    buddy.position = new BABYLON.Vector3(-3, 2, 3); // Start near player
+    
+    // Friendly blue color scheme
+    const material = new BABYLON.StandardMaterial("buddyMaterial", scene);
+    material.diffuseColor = new BABYLON.Color3(0.2, 0.5, 1);
+    material.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.4);
+    buddy.material = material;
+    
+    // Buddy head (smaller than enemy)
+    const head = BABYLON.MeshBuilder.CreateBox("buddyHead", {size: 0.8}, scene);
+    head.position = new BABYLON.Vector3(0, 1.3, 0);
+    head.parent = buddy;
+    
+    const headMaterial = new BABYLON.StandardMaterial("buddyHeadMaterial", scene);
+    headMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.6, 1);
+    head.material = headMaterial;
+    
+    // Friendly green eyes
+    const leftEye = BABYLON.MeshBuilder.CreateSphere("buddyLeftEye", {diameter: 0.15}, scene);
+    leftEye.position = new BABYLON.Vector3(-0.25, 1.4, 0.35);
+    leftEye.parent = buddy;
+    
+    const rightEye = BABYLON.MeshBuilder.CreateSphere("buddyRightEye", {diameter: 0.15}, scene);
+    rightEye.position = new BABYLON.Vector3(0.25, 1.4, 0.35);
+    rightEye.parent = buddy;
+    
+    const eyeMaterial = new BABYLON.StandardMaterial("buddyEyeMaterial", scene);
+    eyeMaterial.diffuseColor = new BABYLON.Color3(0, 1, 0.2);
+    eyeMaterial.emissiveColor = new BABYLON.Color3(0, 0.8, 0.1);
+    leftEye.material = eyeMaterial;
+    rightEye.material = eyeMaterial;
+    
+    // Buddy arms
+    const leftArm = BABYLON.MeshBuilder.CreateBox("buddyLeftArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
+    leftArm.position = new BABYLON.Vector3(-1, 0, 0);
+    leftArm.parent = buddy;
+    leftArm.material = material;
+    
+    const rightArm = BABYLON.MeshBuilder.CreateBox("buddyRightArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
+    rightArm.position = new BABYLON.Vector3(1, 0, 0);
+    rightArm.parent = buddy;
+    rightArm.material = material;
+    
+    // Add a protective shield on the arm
+    const shield = BABYLON.MeshBuilder.CreateCylinder("buddyShield", {height: 0.1, diameter: 1}, scene);
+    shield.position = new BABYLON.Vector3(0, 0.5, 0.3);
+    shield.parent = leftArm;
+    shield.rotation.x = Math.PI / 2;
+    
+    const shieldMaterial = new BABYLON.StandardMaterial("shieldMaterial", scene);
+    shieldMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.9);
+    shieldMaterial.specularColor = new BABYLON.Color3(1, 1, 1);
+    shield.material = shieldMaterial;
+    
+    // Store references to buddy parts
+    buddy.robotParts = {head, leftEye, rightEye, leftArm, rightArm, shield};
+    
+    buddy.health = 80;
+    buddy.maxHealth = 80;
+    buddy.speed = 0.05; // Faster movement
+    buddy.lastAttack = 0;
+    buddy.lastShot = 0;
+    buddy.lastHeal = 0;
+    buddy.target = null;
+    buddy.followDistance = 4; // Stay within 4 units of player
+    buddy.attackRange = 15; // Increased attack range
+    buddy.healRange = 2; // Heal when within 2 units of player
+    buddy.checkCollisions = true;
+    
+    // Create health bar for buddy
+    createHealthBar(scene, buddy);
+    
+    gameState.buddy = buddy;
+}
+
+function updateBuddy(scene, camera, currentTime) {
+    const buddy = gameState.buddy;
+    const playerPosition = camera.position;
+    const distanceToPlayer = BABYLON.Vector3.Distance(buddy.position, playerPosition);
+    
+    // Find the closest enemy
+    let closestEnemy = null;
+    let closestDistance = Infinity;
+    
+    gameState.enemies.forEach(enemy => {
+        const distance = BABYLON.Vector3.Distance(buddy.position, enemy.position);
+        if (distance < closestDistance && distance < buddy.attackRange) {
+            closestEnemy = enemy;
+            closestDistance = distance;
+        }
+    });
+    
+    // Priority 1: Heal player if close and player needs healing
+    if (distanceToPlayer <= buddy.healRange && gameState.player.health < 200 && currentTime - buddy.lastHeal > 3000) {
+        healPlayer(buddy, currentTime);
+    }
+    // Priority 2: Attack enemies more aggressively
+    else if (closestEnemy && currentTime - buddy.lastShot > 800) { // Faster shooting
+        buddyShoot(scene, buddy, closestEnemy);
+        buddy.lastShot = currentTime;
+    }
+    // Priority 3: Follow player if too far away
+    else if (distanceToPlayer > buddy.followDistance) {
+        moveBuddyTowardsPlayer(buddy, playerPosition);
+    }
+    // Priority 4: Move to defensive position around player
+    else if (distanceToPlayer < 1.5) {
+        // Move to a good defensive position
+        const angle = Math.atan2(buddy.position.z - playerPosition.z, buddy.position.x - playerPosition.x);
+        const targetX = playerPosition.x + Math.cos(angle) * buddy.followDistance;
+        const targetZ = playerPosition.z + Math.sin(angle) * buddy.followDistance;
+        const targetPosition = new BABYLON.Vector3(targetX, buddy.position.y, targetZ);
+        
+        const direction = targetPosition.subtract(buddy.position).normalize();
+        buddy.position.addInPlace(direction.scale(buddy.speed));
+    }
+}
+
+function moveBuddyTowardsPlayer(buddy, playerPosition) {
+    const direction = playerPosition.subtract(buddy.position).normalize();
+    // Move faster when following to catch up
+    buddy.position.addInPlace(direction.scale(buddy.speed * 1.5));
+}
+
+function healPlayer(buddy, currentTime) {
+    const healAmount = 15; // Heal 15 HP
+    gameState.player.health = Math.min(200, gameState.player.health + healAmount);
+    document.getElementById('health').textContent = gameState.player.health;
+    buddy.lastHeal = currentTime;
+    
+    // Create healing visual effect
+    createHealingEffect(buddy.getScene(), gameState.player);
+    
+    // Play healing sound
+    createBeepSound(800, 0.3, 0.12); // Higher pitch healing sound
+}
+
+function createHealingEffect(scene, target) {
+    // Create green healing particles around player
+    for (let i = 0; i < 8; i++) {
+        const particle = BABYLON.MeshBuilder.CreateSphere("healParticle", {diameter: 0.2}, scene);
+        const angle = (i / 8) * Math.PI * 2;
+        const radius = 1.5;
+        
+        particle.position = new BABYLON.Vector3(
+            target.position ? target.position.x + Math.cos(angle) * radius : Math.cos(angle) * radius,
+            (target.position ? target.position.y : 6) + Math.random() * 2,
+            target.position ? target.position.z + Math.sin(angle) * radius : Math.sin(angle) * radius
+        );
+        
+        const material = new BABYLON.StandardMaterial("healMaterial", scene);
+        material.diffuseColor = new BABYLON.Color3(0, 1, 0.3);
+        material.emissiveColor = new BABYLON.Color3(0, 0.8, 0.2);
+        particle.material = material;
+        
+        // Animate particles floating upward
+        const startY = particle.position.y;
+        let animationTime = 0;
+        const animateParticle = () => {
+            animationTime += 0.05;
+            particle.position.y = startY + Math.sin(animationTime) * 0.5 + animationTime;
+            particle.scaling = particle.scaling.scale(0.95); // Shrink over time
+            
+            if (animationTime < 2) {
+                requestAnimationFrame(animateParticle);
+            } else {
+                particle.dispose();
+            }
+        };
+        animateParticle();
+    }
+}
+
+function buddyShoot(scene, buddy, targetEnemy) {
+    const projectile = BABYLON.MeshBuilder.CreateSphere("buddyProjectile", {diameter: 0.3}, scene);
+    projectile.position = buddy.position.clone();
+    projectile.position.y += 1;
+    
+    // Calculate direction to enemy
+    projectile.direction = targetEnemy.position.subtract(buddy.position).normalize();
+    projectile.speed = 2.5;
+    projectile.damage = 25; // Buddy is helpful but not overpowered
+    
+    // Blue buddy projectiles
+    const material = new BABYLON.StandardMaterial("buddyProjectileMaterial", scene);
+    material.diffuseColor = new BABYLON.Color3(0.2, 0.5, 1);
+    material.emissiveColor = new BABYLON.Color3(0.1, 0.3, 0.8);
+    projectile.material = material;
+    
+    gameState.buddyProjectiles.push(projectile);
+    
+    // Play buddy weapon sound (higher pitched than player weapons)
+    createBeepSound(500, 0.2, 0.1);
 }
 
 function createHealthBar(scene, enemy) {
@@ -991,9 +1269,30 @@ function updateGame(scene, camera) {
         }
     }
     
-    // Update enemies
+    // Update buddy AI
     const currentTime = Date.now();
+    if (gameState.buddy) {
+        updateBuddy(scene, camera, currentTime);
+    }
+    
+    // Update enemies  
     gameState.enemies.forEach(enemy => {
+        // Fix broken enemies that might be missing properties
+        if (typeof enemy.health !== 'number' || enemy.health <= 0) {
+            enemy.health = 60;
+            enemy.maxHealth = 60;
+        }
+        if (typeof enemy.speed !== 'number') {
+            enemy.speed = 0.02;
+            enemy.originalSpeed = 0.02;
+        }
+        if (enemy.isFrozen === undefined) {
+            enemy.isFrozen = false;
+        }
+        if (enemy.isPoisoned === undefined) {
+            enemy.isPoisoned = false;
+        }
+        
         // Check if enemy should unfreeze
         if (enemy.isFrozen && currentTime - enemy.freezeTime > 10000) {
             unfreezeEnemy(enemy);
@@ -1060,6 +1359,57 @@ function updateGame(scene, camera) {
         }
     });
     
+    // Update buddy projectiles
+    for (let i = gameState.buddyProjectiles.length - 1; i >= 0; i--) {
+        const projectile = gameState.buddyProjectiles[i];
+        projectile.position.addInPlace(projectile.direction.scale(projectile.speed));
+        
+        // Check if hit enemies
+        for (let j = gameState.enemies.length - 1; j >= 0; j--) {
+            const enemy = gameState.enemies[j];
+            
+            // Skip if enemy is invalid or already being destroyed
+            if (!enemy || !enemy.position || enemy.health <= 0) continue;
+            
+            const distance = BABYLON.Vector3.Distance(projectile.position, enemy.position);
+            
+            if (distance < 1.5) {
+                // Buddy hit enemy
+                createHitEffect(scene, enemy.position);
+                playHitSound();
+                
+                // Remove projectile
+                projectile.dispose();
+                gameState.buddyProjectiles.splice(i, 1);
+                
+                // Damage enemy
+                enemy.health -= projectile.damage;
+                updateHealthBar(enemy);
+                animateRobotHit(enemy);
+                
+                // Remove enemy if dead
+                if (enemy.health <= 0) {
+                    dropWeapon(scene, enemy.position);
+                    animateRobotDeath(scene, enemy, () => {
+                        enemy.dispose();
+                        const index = gameState.enemies.indexOf(enemy);
+                        if (index > -1) {
+                            gameState.enemies.splice(index, 1);
+                        }
+                        setTimeout(() => createEnemy(scene), 3000);
+                    });
+                }
+                break;
+            }
+        }
+        
+        // Remove distant projectiles
+        if (BABYLON.Vector3.Distance(projectile.position, camera.position) > 100) {
+            projectile.dispose();
+            gameState.buddyProjectiles.splice(i, 1);
+        }
+    }
+    
     // Update enemy projectiles
     for (let i = gameState.enemyProjectiles.length - 1; i >= 0; i--) {
         const projectile = gameState.enemyProjectiles[i];
@@ -1080,6 +1430,39 @@ function updateGame(scene, camera) {
             
             if (gameState.player.health <= 0) {
                 alert('Game Over! Refresh to play again.');
+            }
+        }
+        // Check if hit buddy
+        else if (gameState.buddy) {
+            const distanceToBuddy = BABYLON.Vector3.Distance(projectile.position, gameState.buddy.position);
+            if (distanceToBuddy < 1) {
+                gameState.buddy.health -= projectile.damage;
+                updateHealthBar(gameState.buddy);
+                
+                // Create hit effect
+                createHitEffect(scene, gameState.buddy.position);
+                playHitSound();
+                
+                // Remove projectile
+                projectile.dispose();
+                gameState.enemyProjectiles.splice(i, 1);
+                
+                // Check if buddy died
+                if (gameState.buddy.health <= 0) {
+                    animateRobotDeath(scene, gameState.buddy, () => {
+                        gameState.buddy.dispose();
+                        gameState.buddy = null;
+                        document.getElementById('buddyStatus').textContent = 'Respawning...';
+                        
+                        // Respawn buddy after 10 seconds
+                        setTimeout(() => {
+                            if (gameState.gameStarted) {
+                                createBuddy(scene);
+                                document.getElementById('buddyStatus').textContent = 'Ready';
+                            }
+                        }, 10000);
+                    });
+                }
             }
         }
         // Remove distant projectiles
@@ -1129,6 +1512,10 @@ function checkCollisions(scene) {
         
         for (let j = gameState.enemies.length - 1; j >= 0; j--) {
             const enemy = gameState.enemies[j];
+            
+            // Skip if enemy is invalid or already being destroyed
+            if (!enemy || !enemy.position || enemy.health <= 0) continue;
+            
             const distance = BABYLON.Vector3.Distance(projectile.position, enemy.position);
             
             if (distance < 1.5) {
@@ -1160,7 +1547,10 @@ function checkCollisions(scene) {
                         animateRobotDeath(scene, enemy, () => {
                             // Clean up enemy after death animation
                             enemy.dispose();
-                            gameState.enemies.splice(j, 1);
+                            const index = gameState.enemies.indexOf(enemy);
+                            if (index > -1) {
+                                gameState.enemies.splice(index, 1);
+                            }
                             
                             // Spawn new enemy after delay
                             setTimeout(() => createEnemy(scene), 3000);
@@ -1180,7 +1570,10 @@ function checkCollisions(scene) {
                         animateRobotDeath(scene, enemy, () => {
                             // Clean up enemy after death animation
                             enemy.dispose();
-                            gameState.enemies.splice(j, 1);
+                            const index = gameState.enemies.indexOf(enemy);
+                            if (index > -1) {
+                                gameState.enemies.splice(index, 1);
+                            }
                             
                             // Spawn new enemy after delay
                             setTimeout(() => createEnemy(scene), 3000);
