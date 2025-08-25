@@ -11,7 +11,8 @@ let gameState = {
         weapons: ['Blaster', 'Rocket Launcher', 'Lightning Gun', 'Ice Cannon', 'Fire Staff']
     },
     enemies: [],
-    projectiles: []
+    projectiles: [],
+    enemyProjectiles: []
 };
 
 // Create scene
@@ -89,20 +90,61 @@ function createTree(scene, x, z) {
 }
 
 function createEnemy(scene) {
+    // Create robot body (main box)
     const enemy = BABYLON.MeshBuilder.CreateBox("enemy", {size: 2}, scene);
     enemy.position.x = Math.random() * 60 - 30;
     enemy.position.z = Math.random() * 60 - 30;
     enemy.position.y = 2;
     
     const material = new BABYLON.StandardMaterial("enemyMaterial", scene);
-    material.diffuseColor = new BABYLON.Color3(1, 0, 0);
-    material.emissiveColor = new BABYLON.Color3(0.2, 0, 0);
+    material.diffuseColor = new BABYLON.Color3(0.7, 0.7, 0.8);
+    material.emissiveColor = new BABYLON.Color3(0.1, 0.1, 0.2);
     enemy.material = material;
+    
+    // Robot head
+    const head = BABYLON.MeshBuilder.CreateBox("head", {size: 1}, scene);
+    head.position = new BABYLON.Vector3(0, 1.5, 0);
+    head.parent = enemy;
+    
+    const headMaterial = new BABYLON.StandardMaterial("headMaterial", scene);
+    headMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.9);
+    head.material = headMaterial;
+    
+    // Robot eyes (glowing red)
+    const leftEye = BABYLON.MeshBuilder.CreateSphere("leftEye", {diameter: 0.2}, scene);
+    leftEye.position = new BABYLON.Vector3(-0.3, 1.7, 0.4);
+    leftEye.parent = enemy;
+    
+    const rightEye = BABYLON.MeshBuilder.CreateSphere("rightEye", {diameter: 0.2}, scene);
+    rightEye.position = new BABYLON.Vector3(0.3, 1.7, 0.4);
+    rightEye.parent = enemy;
+    
+    const eyeMaterial = new BABYLON.StandardMaterial("eyeMaterial", scene);
+    eyeMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
+    eyeMaterial.emissiveColor = new BABYLON.Color3(1, 0, 0);
+    leftEye.material = eyeMaterial;
+    rightEye.material = eyeMaterial;
+    
+    // Robot arms
+    const leftArm = BABYLON.MeshBuilder.CreateBox("leftArm", {width: 0.5, height: 1.5, depth: 0.5}, scene);
+    leftArm.position = new BABYLON.Vector3(-1.2, 0, 0);
+    leftArm.parent = enemy;
+    leftArm.material = material;
+    
+    const rightArm = BABYLON.MeshBuilder.CreateBox("rightArm", {width: 0.5, height: 1.5, depth: 0.5}, scene);
+    rightArm.position = new BABYLON.Vector3(1.2, 0, 0);
+    rightArm.parent = enemy;
+    rightArm.material = material;
+    
+    // Store references to robot parts
+    enemy.robotParts = {head, leftEye, rightEye, leftArm, rightArm};
     
     enemy.health = 60;
     enemy.speed = 0.02;
     enemy.lastAttack = 0;
+    enemy.lastShot = 0;
     enemy.checkCollisions = true;
+    enemy.obstacles = []; // Will store nearby obstacles
     
     gameState.enemies.push(enemy);
 }
@@ -204,14 +246,21 @@ function updateGame(scene, camera) {
     // Update enemies
     const currentTime = Date.now();
     gameState.enemies.forEach(enemy => {
-        // Move towards player
-        const direction = camera.position.subtract(enemy.position).normalize();
-        enemy.position.addInPlace(direction.scale(enemy.speed));
-        
-        // Attack player if close
         const distance = BABYLON.Vector3.Distance(enemy.position, camera.position);
+        
+        // Robot AI: shoot if in range, otherwise move closer
+        if (distance < 15 && distance > 3 && currentTime - enemy.lastShot > 1500) {
+            // Shoot at player
+            enemyShoot(scene, enemy, camera);
+            enemy.lastShot = currentTime;
+        } else if (distance > 3) {
+            // Move towards player with obstacle avoidance
+            moveEnemyWithAvoidance(enemy, camera);
+        }
+        
+        // Melee attack if very close
         if (distance < 3 && currentTime - enemy.lastAttack > 2000) {
-            gameState.player.health -= 10;
+            gameState.player.health -= 15;
             enemy.lastAttack = currentTime;
             document.getElementById('health').textContent = gameState.player.health;
             
@@ -220,6 +269,35 @@ function updateGame(scene, camera) {
             }
         }
     });
+    
+    // Update enemy projectiles
+    for (let i = gameState.enemyProjectiles.length - 1; i >= 0; i--) {
+        const projectile = gameState.enemyProjectiles[i];
+        projectile.position.addInPlace(projectile.direction.scale(projectile.speed));
+        
+        // Check if hit player
+        const distanceToPlayer = BABYLON.Vector3.Distance(projectile.position, camera.position);
+        if (distanceToPlayer < 1) {
+            gameState.player.health -= projectile.damage;
+            document.getElementById('health').textContent = gameState.player.health;
+            
+            // Create hit effect
+            createHitEffect(scene, camera.position);
+            
+            // Remove projectile
+            projectile.dispose();
+            gameState.enemyProjectiles.splice(i, 1);
+            
+            if (gameState.player.health <= 0) {
+                alert('Game Over! Refresh to play again.');
+            }
+        }
+        // Remove distant projectiles
+        else if (BABYLON.Vector3.Distance(projectile.position, camera.position) > 100) {
+            projectile.dispose();
+            gameState.enemyProjectiles.splice(i, 1);
+        }
+    }
     
     // Check collisions
     checkCollisions(scene);
@@ -243,17 +321,23 @@ function checkCollisions(scene) {
                 // Create hit effect
                 createHitEffect(scene, enemy.position);
                 
+                // Add hit animation
+                animateRobotHit(enemy);
+                
                 // Remove projectile
                 projectile.dispose();
                 gameState.projectiles.splice(i, 1);
                 
                 // Remove enemy if dead
                 if (enemy.health <= 0) {
-                    enemy.dispose();
-                    gameState.enemies.splice(j, 1);
-                    
-                    // Spawn new enemy after delay
-                    setTimeout(() => createEnemy(scene), 3000);
+                    animateRobotDeath(scene, enemy, () => {
+                        // Clean up enemy after death animation
+                        enemy.dispose();
+                        gameState.enemies.splice(j, 1);
+                        
+                        // Spawn new enemy after delay
+                        setTimeout(() => createEnemy(scene), 3000);
+                    });
                 }
                 break;
             }
@@ -271,6 +355,168 @@ function createHitEffect(scene, position) {
     effect.material = material;
     
     setTimeout(() => effect.dispose(), 200);
+}
+
+function enemyShoot(scene, enemy, camera) {
+    const projectile = BABYLON.MeshBuilder.CreateSphere("enemyProjectile", {diameter: 0.4}, scene);
+    projectile.position = enemy.position.clone();
+    projectile.position.y += 1;
+    
+    // Calculate direction to player
+    projectile.direction = camera.position.subtract(enemy.position).normalize();
+    projectile.speed = 1.5;
+    projectile.damage = 8;
+    
+    // Red enemy projectiles
+    const material = new BABYLON.StandardMaterial("enemyProjectileMaterial", scene);
+    material.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2);
+    material.emissiveColor = new BABYLON.Color3(1, 0.2, 0.2);
+    projectile.material = material;
+    
+    gameState.enemyProjectiles.push(projectile);
+}
+
+function moveEnemyWithAvoidance(enemy, camera) {
+    // Simple obstacle avoidance - cast rays to detect obstacles
+    const desiredDirection = camera.position.subtract(enemy.position).normalize();
+    const currentPos = enemy.position;
+    
+    // Check for obstacles in front
+    const frontRay = new BABYLON.Ray(currentPos, desiredDirection);
+    const hit = enemy.getScene().pickWithRay(frontRay, (mesh) => {
+        return mesh.name.includes('rock') || mesh.name.includes('trunk');
+    });
+    
+    let moveDirection = desiredDirection;
+    
+    if (hit.hit && hit.distance < 4) {
+        // Obstacle detected, try to go around it
+        const avoidanceAngle = Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2;
+        const avoidDirection = new BABYLON.Vector3(
+            desiredDirection.x * Math.cos(avoidanceAngle) - desiredDirection.z * Math.sin(avoidanceAngle),
+            0,
+            desiredDirection.x * Math.sin(avoidanceAngle) + desiredDirection.z * Math.cos(avoidanceAngle)
+        ).normalize();
+        
+        moveDirection = avoidDirection;
+    }
+    
+    // Move the enemy
+    enemy.position.addInPlace(moveDirection.scale(enemy.speed));
+}
+
+function animateRobotHit(enemy) {
+    if (!enemy.robotParts || enemy.isAnimating) return;
+    
+    enemy.isAnimating = true;
+    
+    // Flash red and shake
+    const originalColor = enemy.material.diffuseColor.clone();
+    const hitColor = new BABYLON.Color3(1, 0.3, 0.3);
+    
+    // Change to hit color
+    enemy.material.diffuseColor = hitColor;
+    if (enemy.robotParts.head) {
+        enemy.robotParts.head.material.diffuseColor = hitColor;
+    }
+    
+    // Shake animation
+    const originalPosition = enemy.position.clone();
+    let shakeCount = 0;
+    const shakeInterval = setInterval(() => {
+        if (shakeCount < 6) {
+            enemy.position.x = originalPosition.x + (Math.random() - 0.5) * 0.4;
+            enemy.position.z = originalPosition.z + (Math.random() - 0.5) * 0.4;
+            shakeCount++;
+        } else {
+            clearInterval(shakeInterval);
+            enemy.position = originalPosition;
+            
+            // Restore original color
+            enemy.material.diffuseColor = originalColor;
+            if (enemy.robotParts.head) {
+                enemy.robotParts.head.material.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.9);
+            }
+            
+            enemy.isAnimating = false;
+        }
+    }, 50);
+}
+
+function animateRobotDeath(scene, enemy, callback) {
+    if (!enemy.robotParts || enemy.isDying) return;
+    
+    enemy.isDying = true;
+    enemy.speed = 0; // Stop moving
+    
+    // Create explosion effect
+    const explosion = BABYLON.MeshBuilder.CreateSphere("explosion", {diameter: 6}, scene);
+    explosion.position = enemy.position.clone();
+    explosion.position.y += 1;
+    
+    const explosionMaterial = new BABYLON.StandardMaterial("explosionMaterial", scene);
+    explosionMaterial.diffuseColor = new BABYLON.Color3(1, 0.5, 0);
+    explosionMaterial.emissiveColor = new BABYLON.Color3(1, 0.5, 0);
+    explosion.material = explosionMaterial;
+    
+    // Animate explosion growing and fading
+    let explosionScale = 0.1;
+    const explosionInterval = setInterval(() => {
+        explosionScale += 0.3;
+        explosion.scaling = new BABYLON.Vector3(explosionScale, explosionScale, explosionScale);
+        
+        // Fade out
+        explosionMaterial.alpha = Math.max(0, 1 - explosionScale / 4);
+        
+        if (explosionScale > 4) {
+            clearInterval(explosionInterval);
+            explosion.dispose();
+        }
+    }, 50);
+    
+    // Animate robot parts flying away
+    const parts = [enemy, enemy.robotParts.head, enemy.robotParts.leftArm, enemy.robotParts.rightArm];
+    
+    parts.forEach((part, index) => {
+        if (!part) return;
+        
+        // Random direction and rotation for each part
+        const flyDirection = new BABYLON.Vector3(
+            (Math.random() - 0.5) * 2,
+            Math.random() + 0.5,
+            (Math.random() - 0.5) * 2
+        );
+        
+        const rotationSpeed = new BABYLON.Vector3(
+            (Math.random() - 0.5) * 0.3,
+            (Math.random() - 0.5) * 0.3,
+            (Math.random() - 0.5) * 0.3
+        );
+        
+        let animationTime = 0;
+        const partInterval = setInterval(() => {
+            if (animationTime < 30) {
+                // Fly away and spin
+                part.position.addInPlace(flyDirection.scale(0.2));
+                flyDirection.y -= 0.03; // Gravity
+                
+                part.rotation.addInPlace(rotationSpeed);
+                
+                // Fade out
+                if (part.material) {
+                    part.material.alpha = Math.max(0, 1 - animationTime / 30);
+                }
+                
+                animationTime++;
+            } else {
+                clearInterval(partInterval);
+                if (index === 0) {
+                    // Main body is last, trigger callback
+                    setTimeout(callback, 100);
+                }
+            }
+        }, 50);
+    });
 }
 
 // Create the scene
