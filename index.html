@@ -104,6 +104,153 @@
             border-radius: 10px;
             margin-top: 1rem;
         }
+        
+        /* Mobile Controls Styles */
+        #mobileControls {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        #joystickContainer {
+            position: absolute;
+            bottom: 80px;
+            left: 50px;
+            pointer-events: auto;
+        }
+        
+        #joystick {
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 3px solid rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            position: relative;
+            touch-action: none;
+        }
+        
+        #joystickKnob {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid #4ecdc4;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s;
+        }
+        
+        #actionButtons {
+            position: absolute;
+            bottom: 80px;
+            right: 50px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            pointer-events: auto;
+        }
+        
+        #actionButtons button {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 3px solid rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+        }
+        
+        #actionButtons button:active {
+            background: rgba(78, 205, 196, 0.7);
+            transform: scale(0.95);
+        }
+        
+        #weaponButtons {
+            position: absolute;
+            top: 50%;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            pointer-events: auto;
+            transform: translateY(-50%);
+        }
+        
+        #weaponButtons button {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.7);
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+        }
+        
+        #weaponButtons button:active {
+            background: rgba(78, 205, 196, 0.7);
+            transform: scale(0.9);
+        }
+        
+        #chestInteractButton {
+            position: absolute;
+            top: 30%;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: auto;
+        }
+        
+        #chestInteractButton button {
+            width: 100px;
+            height: 50px;
+            background: rgba(255, 215, 0, 0.8);
+            border: 3px solid rgba(255, 215, 0, 0.9);
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        
+        #chestInteractButton button:active {
+            background: rgba(255, 215, 0, 1);
+            transform: scale(0.95);
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            #ui {
+                font-size: 14px;
+                top: 20px;
+                left: 20px;
+            }
+            
+            #crosshair {
+                width: 15px;
+                height: 15px;
+            }
+            
+            #instructions {
+                font-size: 12px;
+                bottom: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -134,12 +281,40 @@
         <div>Health: <span id="health">200</span></div>
         <div>Buddy: <span id="buddyStatus">Ready</span></div>
         <div>Weapon: <span id="currentWeapon">Basic Blaster</span></div>
+        <div>Kills: <span id="killCount">0</span>/20 (Boss at 20)</div>
         <div>Enemies: <span id="enemyCount">0</span></div>
         <div>Weapons: <span id="weaponCount">1</span>/50</div>
         <div id="weaponDescription" style="font-size: 14px; color: #4ecdc4; margin-top: 10px; max-width: 300px;">Your trusty starting blaster - reliable and ready for robot battles!</div>
     </div>
     <div id="instructions" style="display: none;">
         Kill robots to collect new weapons! | Numbers 1-9: Switch Weapons
+    </div>
+    
+    <!-- Mobile Controls -->
+    <div id="mobileControls" style="display: none;">
+        <!-- Virtual Joystick for Movement -->
+        <div id="joystickContainer">
+            <div id="joystick">
+                <div id="joystickKnob"></div>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div id="actionButtons">
+            <button id="jumpButton">JUMP</button>
+            <button id="shootButton">SHOOT</button>
+        </div>
+        
+        <!-- Weapon Switch Buttons -->
+        <div id="weaponButtons">
+            <button id="prevWeapon">◀</button>
+            <button id="nextWeapon">▶</button>
+        </div>
+        
+        <!-- Chest Interaction Button -->
+        <div id="chestInteractButton" style="display: none;">
+            <button id="chestButton">💎 CHEST</button>
+        </div>
     </div>
     
     <script src="https://cdn.babylonjs.com/babylon.js"></script>

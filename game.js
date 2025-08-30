@@ -113,15 +113,22 @@ let gameState = {
         isOnGround: true,
         jumpPower: 15,
         weaponsCollected: 1,
-        invulnerableUntil: 0
+        invulnerableUntil: 0,
+        lastShot: 0
     },
     enemies: [],
     projectiles: [],
     enemyProjectiles: [],
     buddyProjectiles: [],
     weaponDrops: [],
+    weaponChests: [], // Weapon storage chests
+    chestPromptShown: false,
+    chestInteract: false,
+    activeChest: null, // Currently open chest
     obstacles: [], // Track obstacle positions for better enemy spawning
     buddy: null, // Player's protective companion
+    killCount: 0, // Track robot kills
+    bossSpawned: false, // Track if boss has been spawned
     sounds: {
         robotStep: null,
         robotShoot: null,
@@ -189,6 +196,11 @@ const createScene = function () {
             position: new BABYLON.Vector3(x, 0, z),
             radius: 3 // Tree trunk radius plus buffer
         });
+    }
+    
+    // Create weapon chests
+    for (let i = 0; i < 3; i++) {
+        createWeaponChest(scene);
     }
     
     // Create protective buddy
@@ -304,12 +316,94 @@ function createTree(scene, x, z) {
     leaves.checkCollisions = true;
 }
 
+function createWeaponChest(scene) {
+    // Find a safe position for the chest
+    let chestPosition;
+    for (let attempts = 0; attempts < 50; attempts++) {
+        const x = Math.random() * 180 - 90; // Wider range for chests
+        const z = Math.random() * 180 - 90;
+        chestPosition = new BABYLON.Vector3(x, 7, z);
+        
+        // Check distance from other chests (minimum 30 units apart)
+        let validPosition = true;
+        for (const existingChest of gameState.weaponChests) {
+            const distance = BABYLON.Vector3.Distance(chestPosition, existingChest.position);
+            if (distance < 30) {
+                validPosition = false;
+                break;
+            }
+        }
+        
+        // Check distance from obstacles
+        for (const obstacle of gameState.obstacles) {
+            const distance = BABYLON.Vector3.Distance(chestPosition, obstacle.position);
+            if (distance < 8) {
+                validPosition = false;
+                break;
+            }
+        }
+        
+        if (validPosition) break;
+    }
+    
+    // Create chest base
+    const chest = BABYLON.MeshBuilder.CreateBox("weaponChest", {width: 3, height: 2, depth: 2}, scene);
+    chest.position = chestPosition;
+    
+    // Chest material - wooden look
+    const chestMaterial = new BABYLON.StandardMaterial("chestMaterial", scene);
+    chestMaterial.diffuseColor = new BABYLON.Color3(0.6, 0.3, 0.1);
+    chestMaterial.specularColor = new BABYLON.Color3(0.2, 0.1, 0.05);
+    chest.material = chestMaterial;
+    
+    // Metal bands on chest
+    const band1 = BABYLON.MeshBuilder.CreateBox("band1", {width: 3.1, height: 0.2, depth: 2.1}, scene);
+    band1.position = new BABYLON.Vector3(chestPosition.x, chestPosition.y + 0.3, chestPosition.z);
+    const band2 = BABYLON.MeshBuilder.CreateBox("band2", {width: 3.1, height: 0.2, depth: 2.1}, scene);
+    band2.position = new BABYLON.Vector3(chestPosition.x, chestPosition.y - 0.3, chestPosition.z);
+    
+    const metalMaterial = new BABYLON.StandardMaterial("metalMaterial", scene);
+    metalMaterial.diffuseColor = new BABYLON.Color3(0.7, 0.7, 0.7);
+    metalMaterial.specularColor = new BABYLON.Color3(0.9, 0.9, 0.9);
+    band1.material = metalMaterial;
+    band2.material = metalMaterial;
+    
+    // Glowing indicator when chest has items
+    const indicator = BABYLON.MeshBuilder.CreateSphere("indicator", {diameter: 0.5}, scene);
+    indicator.position = new BABYLON.Vector3(chestPosition.x, chestPosition.y + 1.5, chestPosition.z);
+    
+    const indicatorMaterial = new BABYLON.StandardMaterial("indicatorMaterial", scene);
+    indicatorMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.8, 0.2);
+    indicatorMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.4, 0.1);
+    indicator.material = indicatorMaterial;
+    
+    // Store chest data
+    const chestData = {
+        mesh: chest,
+        indicator: indicator,
+        bands: [band1, band2],
+        position: chestPosition,
+        storedWeapons: [], // Array of weapon names stored in this chest
+        isOpen: false,
+        id: gameState.weaponChests.length
+    };
+    
+    chest.checkCollisions = true;
+    gameState.weaponChests.push(chestData);
+    
+    // Add to obstacles so enemies don't spawn too close
+    gameState.obstacles.push({
+        position: chestPosition,
+        radius: 4
+    });
+}
+
 function findSafeSpawnPosition(playerPosition = new BABYLON.Vector3(0, 0, 0)) {
     // Try to find a safe position up to 50 times
     for (let attempts = 0; attempts < 50; attempts++) {
         const x = Math.random() * 60 - 30;
         const z = Math.random() * 60 - 30;
-        const position = new BABYLON.Vector3(x, 2, z);
+        const position = new BABYLON.Vector3(x, 7, z);
         
         // Check distance from player (minimum 10 units away)
         const distanceFromPlayer = BABYLON.Vector3.Distance(position, playerPosition);
@@ -337,7 +431,7 @@ function findSafeSpawnPosition(playerPosition = new BABYLON.Vector3(0, 0, 0)) {
     const groundHeight = getGroundHeight(scene, Math.cos(angle) * distance, Math.sin(angle) * distance);
     return new BABYLON.Vector3(
         Math.cos(angle) * distance,
-       2, // 1 unit above ground for robot feet
+        7, // 1 unit above ground for robot feet
         Math.sin(angle) * distance
     );
 }
@@ -547,6 +641,98 @@ function createBuddy(scene) {
     createHealthBar(scene, buddy);
     
     gameState.buddy = buddy;
+}
+
+function createBossEnemy(scene) {
+    // Create giant boss robot body (50% bigger than before)
+    const boss = BABYLON.MeshBuilder.CreateBox("boss", {size: 6}, scene);
+    
+    // Spawn boss at a safe distance from player
+    const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
+    const safePosition = findSafeSpawnPosition(playerPosition); // Use default spawn distance
+    boss.position = safePosition;
+    
+    const material = new BABYLON.StandardMaterial("bossMaterial", scene);
+    material.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2); // Dark red color
+    material.emissiveColor = new BABYLON.Color3(0.3, 0.1, 0.1);
+    boss.material = material;
+    
+    // Giant robot head (scaled up proportionally)
+    const head = BABYLON.MeshBuilder.CreateBox("bossHead", {size: 3}, scene);
+    head.position = new BABYLON.Vector3(0, 4.5, 0);
+    head.parent = boss;
+    
+    const headMaterial = new BABYLON.StandardMaterial("bossHeadMaterial", scene);
+    headMaterial.diffuseColor = new BABYLON.Color3(1, 0.1, 0.1);
+    head.material = headMaterial;
+    
+    // Giant glowing red eyes (scaled up)
+    const leftEye = BABYLON.MeshBuilder.CreateSphere("bossLeftEye", {diameter: 0.6}, scene);
+    leftEye.position = new BABYLON.Vector3(-0.9, 5.1, 1.2);
+    leftEye.parent = boss;
+    
+    const rightEye = BABYLON.MeshBuilder.CreateSphere("bossRightEye", {diameter: 0.6}, scene);
+    rightEye.position = new BABYLON.Vector3(0.9, 5.1, 1.2);
+    rightEye.parent = boss;
+    
+    const eyeMaterial = new BABYLON.StandardMaterial("bossEyeMaterial", scene);
+    eyeMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
+    eyeMaterial.emissiveColor = new BABYLON.Color3(1, 0, 0);
+    leftEye.material = eyeMaterial;
+    rightEye.material = eyeMaterial;
+    
+    // Giant arms with weapons (scaled up)
+    const leftArm = BABYLON.MeshBuilder.CreateBox("bossLeftArm", {width: 1.2, height: 3.6, depth: 1.2}, scene);
+    leftArm.position = new BABYLON.Vector3(-3.75, 0.6, 0);
+    leftArm.parent = boss;
+    leftArm.material = material;
+    
+    const rightArm = BABYLON.MeshBuilder.CreateBox("bossRightArm", {width: 1.2, height: 3.6, depth: 1.2}, scene);
+    rightArm.position = new BABYLON.Vector3(3.75, 0.6, 0);
+    rightArm.parent = boss;
+    rightArm.material = material;
+    
+    // Giant legs (scaled up)
+    const leftLeg = BABYLON.MeshBuilder.CreateBox("bossLeftLeg", {width: 1.2, height: 3.6, depth: 1.2}, scene);
+    leftLeg.position = new BABYLON.Vector3(-1.2, -3, 0);
+    leftLeg.parent = boss;
+    leftLeg.material = material;
+    
+    const rightLeg = BABYLON.MeshBuilder.CreateBox("bossRightLeg", {width: 1.2, height: 3.6, depth: 1.2}, scene);
+    rightLeg.position = new BABYLON.Vector3(1.2, -3, 0);
+    rightLeg.parent = boss;
+    rightLeg.material = material;
+    
+    // Store references to robot parts for animation
+    boss.robotParts = {
+        head, leftEye, rightEye,
+        leftArm, rightArm, leftLeg, rightLeg
+    };
+    
+    boss.health = 1000;
+    boss.maxHealth = 1000;
+    boss.speed = 0.01; // Slower than regular enemies
+    boss.originalSpeed = 0.01;
+    boss.lastAttack = 0;
+    boss.lastShot = 0;
+    boss.checkCollisions = true;
+    boss.obstacles = [];
+    boss.isBoss = true; // Mark as boss enemy
+    boss.attackDamage = 50; // Much stronger attacks
+    boss.shootCooldown = 1000; // Faster shooting
+    
+    // Animation properties
+    boss.animationTime = 0;
+    boss.isMoving = false;
+    boss.lastDirection = new BABYLON.Vector3(0, 0, 1);
+    
+    // Create health bar above boss
+    createHealthBar(scene, boss);
+    
+    gameState.enemies.push(boss);
+    
+    // Show boss arrival message
+    alert("GIANT BOSS ROBOT APPEARED! Defeat it to win!");
 }
 
 function updateBuddy(scene, camera, currentTime) {
@@ -771,7 +957,7 @@ function setupControls(scene, camera) {
     
     // Mouse shooting
     scene.onPointerObservable.add((pointerInfo) => {
-        if (pointerInfo.pickInfo.hit && pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {
+        if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN && gameState.gameStarted) {
             shoot(scene, camera);
         }
     });
@@ -779,6 +965,149 @@ function setupControls(scene, camera) {
     // Lock pointer on click
     canvas.addEventListener('click', () => {
         canvas.requestPointerLock();
+    });
+    
+    // Setup mobile controls
+    setupMobileControls(scene, camera);
+}
+
+function setupMobileControls(scene, camera) {
+    // Detect mobile device
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                     ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    
+    if (isMobile) {
+        // Show mobile controls
+        document.getElementById('mobileControls').style.display = 'block';
+    }
+    
+    // Virtual joystick variables
+    let joystickActive = false;
+    let joystickCenter = { x: 0, y: 0 };
+    let joystickKnob = document.getElementById('joystickKnob');
+    let joystick = document.getElementById('joystick');
+    
+    // Touch camera control variables  
+    let lastTouch = { x: 0, y: 0 };
+    let touchLookActive = false;
+    
+    // Movement state for virtual joystick
+    gameState.mobileMovement = { x: 0, y: 0 };
+    
+    // Virtual joystick touch handlers
+    joystick.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        joystickActive = true;
+        const rect = joystick.getBoundingClientRect();
+        joystickCenter = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+        };
+    });
+    
+    joystick.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        if (!joystickActive) return;
+        
+        const touch = e.touches[0];
+        const dx = touch.clientX - joystickCenter.x;
+        const dy = touch.clientY - joystickCenter.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const maxDistance = 40; // Half of joystick radius
+        
+        if (distance <= maxDistance) {
+            joystickKnob.style.left = (50 + (dx / maxDistance) * 50) + '%';
+            joystickKnob.style.top = (50 + (dy / maxDistance) * 50) + '%';
+            gameState.mobileMovement.x = dx / maxDistance;
+            gameState.mobileMovement.y = dy / maxDistance;
+        } else {
+            const angle = Math.atan2(dy, dx);
+            const limitedX = Math.cos(angle) * maxDistance;
+            const limitedY = Math.sin(angle) * maxDistance;
+            joystickKnob.style.left = (50 + (limitedX / maxDistance) * 50) + '%';
+            joystickKnob.style.top = (50 + (limitedY / maxDistance) * 50) + '%';
+            gameState.mobileMovement.x = limitedX / maxDistance;
+            gameState.mobileMovement.y = limitedY / maxDistance;
+        }
+    });
+    
+    joystick.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        joystickActive = false;
+        joystickKnob.style.left = '50%';
+        joystickKnob.style.top = '50%';
+        gameState.mobileMovement.x = 0;
+        gameState.mobileMovement.y = 0;
+    });
+    
+    // Action buttons
+    document.getElementById('shootButton').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        if (gameState.gameStarted) {
+            shoot(scene, camera);
+        }
+    });
+    
+    document.getElementById('jumpButton').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        if (gameState.player.isOnGround) {
+            gameState.player.velocity.y = gameState.player.jumpPower;
+            gameState.player.isOnGround = false;
+        }
+    });
+    
+    // Weapon switch buttons
+    document.getElementById('prevWeapon').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        const currentIndex = gameState.player.currentWeapon;
+        const newIndex = currentIndex > 0 ? currentIndex - 1 : gameState.player.weapons.length - 1;
+        switchWeapon(newIndex);
+    });
+    
+    document.getElementById('nextWeapon').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        const currentIndex = gameState.player.currentWeapon;
+        const newIndex = currentIndex < gameState.player.weapons.length - 1 ? currentIndex + 1 : 0;
+        switchWeapon(newIndex);
+    });
+    
+    // Chest interaction button
+    document.getElementById('chestButton').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        gameState.chestInteract = true;
+    });
+    
+    // Touch look controls (anywhere on screen except UI elements)
+    canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+            touchLookActive = true;
+            lastTouch.x = e.touches[0].clientX;
+            lastTouch.y = e.touches[0].clientY;
+        }
+    });
+    
+    canvas.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        if (!touchLookActive || e.touches.length !== 1) return;
+        
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - lastTouch.x;
+        const deltaY = touch.clientY - lastTouch.y;
+        
+        // Sensitivity adjustment for mobile
+        const sensitivity = 0.005;
+        camera.rotation.y += deltaX * sensitivity;
+        camera.rotation.x += deltaY * sensitivity;
+        
+        // Clamp vertical rotation
+        camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+        
+        lastTouch.x = touch.clientX;
+        lastTouch.y = touch.clientY;
+    });
+    
+    canvas.addEventListener('touchend', function(e) {
+        touchLookActive = false;
     });
 }
 
@@ -792,9 +1121,19 @@ function switchWeapon(weaponIndex) {
 }
 
 function shoot(scene, camera) {
+    const currentTime = Date.now();
     const weapon = gameState.player.weapons[gameState.player.currentWeapon];
+    const weaponConfig = getWeaponConfig(weapon);
+    const fireRate = weaponConfig ? weaponConfig.fireRate : 100; // Default 100ms cooldown (faster)
+    
+    // Check fire rate cooldown
+    if (currentTime - gameState.player.lastShot < fireRate) {
+        return; // Still on cooldown
+    }
+    
     createProjectile(scene, camera, weapon);
     playWeaponSound(weapon);
+    gameState.player.lastShot = currentTime;
 }
 
 function createProjectile(scene, camera, weaponType) {
@@ -821,7 +1160,7 @@ class Weapon {
         this.damage = config.damage;
         this.color = config.color;
         this.projectileType = config.projectileType;
-        this.fireRate = config.fireRate || 1000;
+        this.fireRate = config.fireRate || 100;
         this.spread = config.spread || 0;
         this.projectileCount = config.projectileCount || 1;
         this.special = config.special || null;
@@ -1291,6 +1630,7 @@ function updateGame(scene, camera) {
     // Movement with collision detection
     const speed = 0.3;
     
+    // Keyboard movement
     if (gameState.keys['w']) {
         const forward = camera.getDirection(BABYLON.Vector3.Forward()).scale(speed);
         const newPosition = camera.position.add(forward);
@@ -1317,6 +1657,30 @@ function updateGame(scene, camera) {
         const newPosition = camera.position.add(right);
         if (!checkCollisionAtPosition(scene, newPosition)) {
             camera.position.addInPlace(right);
+        }
+    }
+    
+    // Mobile joystick movement
+    if (gameState.mobileMovement) {
+        const moveX = gameState.mobileMovement.x * speed;
+        const moveY = -gameState.mobileMovement.y * speed; // Invert Y axis
+        
+        if (Math.abs(moveY) > 0.1) {
+            const direction = moveY > 0 ? camera.getDirection(BABYLON.Vector3.Forward()) : camera.getDirection(BABYLON.Vector3.Backward());
+            const movement = direction.scale(Math.abs(moveY));
+            const newPosition = camera.position.add(movement);
+            if (!checkCollisionAtPosition(scene, newPosition)) {
+                camera.position.addInPlace(movement);
+            }
+        }
+        
+        if (Math.abs(moveX) > 0.1) {
+            const direction = moveX > 0 ? camera.getDirection(BABYLON.Vector3.Right()) : camera.getDirection(BABYLON.Vector3.Left());
+            const movement = direction.scale(Math.abs(moveX));
+            const newPosition = camera.position.add(movement);
+            if (!checkCollisionAtPosition(scene, newPosition)) {
+                camera.position.addInPlace(movement);
+            }
         }
     }
     
@@ -1363,12 +1727,22 @@ function updateGame(scene, camera) {
     gameState.enemies.forEach(enemy => {
         // Fix broken enemies that might be missing properties
         if (typeof enemy.health !== 'number' || enemy.health <= 0) {
-            enemy.health = 60;
-            enemy.maxHealth = 60;
+            if (enemy.isBoss) {
+                enemy.health = 1000;
+                enemy.maxHealth = 1000;
+            } else {
+                enemy.health = 60;
+                enemy.maxHealth = 60;
+            }
         }
         if (typeof enemy.speed !== 'number') {
-            enemy.speed = 0.02;
-            enemy.originalSpeed = 0.02;
+            if (enemy.isBoss) {
+                enemy.speed = 0.01;
+                enemy.originalSpeed = 0.01;
+            } else {
+                enemy.speed = 0.02;
+                enemy.originalSpeed = 0.02;
+            }
         }
         if (enemy.isFrozen === undefined) {
             enemy.isFrozen = false;
@@ -1405,8 +1779,23 @@ function updateGame(scene, camera) {
                             gameState.enemies.splice(index, 1);
                         }
                         
-                        // Spawn new enemy after delay
-                        setTimeout(() => createEnemy(scene), 3000);
+                        // Check if this was the boss
+                        if (enemy.isBoss) {
+                            alert("YOU WIN! You defeated the Giant Boss Robot!");
+                            gameState.gameStarted = false; // End the game
+                        } else {
+                            // Increment kill counter only for regular enemies
+                            gameState.killCount++;
+                            
+                            // Check for boss spawn
+                            if (gameState.killCount >= 20 && !gameState.bossSpawned) {
+                                gameState.bossSpawned = true;
+                                setTimeout(() => createBossEnemy(scene), 2000);
+                            } else {
+                                // Spawn new enemy after delay
+                                setTimeout(() => createEnemy(scene), 3000);
+                            }
+                        }
                     });
                     return;
                 }
@@ -1419,7 +1808,8 @@ function updateGame(scene, camera) {
         const distance = BABYLON.Vector3.Distance(enemy.position, camera.position);
         
         // Robot AI: shoot if in range, otherwise move closer
-        if (distance < 15 && distance > 3 && currentTime - enemy.lastShot > 1500) {
+        const shootCooldown = enemy.shootCooldown || 1500;
+        if (distance < 15 && distance > 3 && currentTime - enemy.lastShot > shootCooldown) {
             // Face the player when shooting
             const shootDirection = camera.position.subtract(enemy.position).normalize();
             rotateEnemyTowards(enemy, shootDirection);
@@ -1496,7 +1886,17 @@ function updateGame(scene, camera) {
                         if (index > -1) {
                             gameState.enemies.splice(index, 1);
                         }
-                        setTimeout(() => createEnemy(scene), 3000);
+                        
+                        // Increment kill counter
+                        gameState.killCount++;
+                        
+                        // Check for boss spawn
+                        if (gameState.killCount >= 20 && !gameState.bossSpawned) {
+                            gameState.bossSpawned = true;
+                            setTimeout(() => createBossEnemy(scene), 2000);
+                        } else {
+                            setTimeout(() => createEnemy(scene), 3000);
+                        }
                     });
                 }
                 break;
@@ -1602,8 +2002,259 @@ function updateGame(scene, camera) {
         }
     }
     
+    // Check chest interactions
+    for (let i = 0; i < gameState.weaponChests.length; i++) {
+        const chest = gameState.weaponChests[i];
+        const distance = BABYLON.Vector3.Distance(camera.position, chest.position);
+        
+        if (distance < 4) {
+            // Show interaction prompt
+            if (!gameState.chestPromptShown) {
+                showChestPrompt(chest);
+                gameState.chestPromptShown = true;
+            }
+            
+            // Handle interaction (press E key or mobile button)
+            if (gameState.keys['e'] || gameState.chestInteract) {
+                openChestInterface(chest);
+                gameState.keys['e'] = false;
+                gameState.chestInteract = false;
+            }
+        } else {
+            hideChestPrompt();
+            gameState.chestPromptShown = false;
+        }
+    }
+    
     // Update UI
     document.getElementById('enemyCount').textContent = gameState.enemies.length;
+    document.getElementById('killCount').textContent = gameState.killCount;
+}
+
+function showChestPrompt(chest) {
+    // Show interaction hint
+    let prompt = document.getElementById('chestPrompt');
+    if (!prompt) {
+        prompt = document.createElement('div');
+        prompt.id = 'chestPrompt';
+        prompt.style.position = 'fixed';
+        prompt.style.top = '40%';
+        prompt.style.left = '50%';
+        prompt.style.transform = 'translate(-50%, -50%)';
+        prompt.style.background = 'rgba(0,0,0,0.8)';
+        prompt.style.color = 'white';
+        prompt.style.padding = '15px 20px';
+        prompt.style.borderRadius = '10px';
+        prompt.style.fontSize = '18px';
+        prompt.style.zIndex = '999';
+        prompt.style.textAlign = 'center';
+        prompt.style.border = '2px solid #4ecdc4';
+        document.body.appendChild(prompt);
+    }
+    
+    const weaponCount = chest.storedWeapons.length;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                     ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    
+    prompt.innerHTML = `
+        <div>💎 Weapon Chest</div>
+        <div style="font-size: 14px; margin-top: 5px;">
+            ${weaponCount} weapon${weaponCount !== 1 ? 's' : ''} stored
+        </div>
+        <div style="font-size: 14px; margin-top: 10px;">
+            ${isMobile ? 'Tap chest button to interact' : 'Press [E] to interact'}
+        </div>
+    `;
+    prompt.style.display = 'block';
+    
+    // Show mobile chest button
+    if (isMobile) {
+        document.getElementById('chestInteractButton').style.display = 'block';
+    }
+}
+
+function hideChestPrompt() {
+    const prompt = document.getElementById('chestPrompt');
+    if (prompt) {
+        prompt.style.display = 'none';
+    }
+    
+    // Hide mobile chest button
+    document.getElementById('chestInteractButton').style.display = 'none';
+}
+
+function openChestInterface(chest) {
+    gameState.activeChest = chest;
+    
+    // Create chest interface
+    let chestUI = document.getElementById('chestInterface');
+    if (!chestUI) {
+        chestUI = document.createElement('div');
+        chestUI.id = 'chestInterface';
+        chestUI.style.position = 'fixed';
+        chestUI.style.top = '50%';
+        chestUI.style.left = '50%';
+        chestUI.style.transform = 'translate(-50%, -50%)';
+        chestUI.style.background = 'rgba(0,0,0,0.95)';
+        chestUI.style.color = 'white';
+        chestUI.style.padding = '20px';
+        chestUI.style.borderRadius = '15px';
+        chestUI.style.fontSize = '16px';
+        chestUI.style.zIndex = '1001';
+        chestUI.style.minWidth = '400px';
+        chestUI.style.maxWidth = '600px';
+        chestUI.style.border = '3px solid #4ecdc4';
+        chestUI.style.boxShadow = '0 0 20px rgba(78, 205, 196, 0.5)';
+        document.body.appendChild(chestUI);
+    }
+    
+    updateChestInterface(chest);
+    chestUI.style.display = 'block';
+    
+    // Pause game while chest is open
+    gameState.gameStarted = false;
+}
+
+function updateChestInterface(chest) {
+    const chestUI = document.getElementById('chestInterface');
+    if (!chestUI) return;
+    
+    let html = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h2 style="margin: 0; color: #4ecdc4;">💎 Weapon Chest ${chest.id + 1}</h2>
+        </div>
+        
+        <div style="display: flex; gap: 20px;">
+            <!-- Your Weapons -->
+            <div style="flex: 1;">
+                <h3 style="color: #ffd700; margin-bottom: 10px;">Your Weapons:</h3>
+                <div style="max-height: 200px; overflow-y: auto; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px;">
+    `;
+    
+    for (let i = 0; i < gameState.player.weapons.length; i++) {
+        const weapon = gameState.player.weapons[i];
+        const isCurrentWeapon = i === gameState.player.currentWeapon;
+        html += `
+            <div style="margin: 5px 0; padding: 8px; background: ${isCurrentWeapon ? 'rgba(78, 205, 196, 0.3)' : 'rgba(255,255,255,0.1)'}; border-radius: 5px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="storeWeapon(${i})">
+                <span>${weapon} ${isCurrentWeapon ? '(equipped)' : ''}</span>
+                <button style="background: #ff6b6b; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer;">Store</button>
+            </div>
+        `;
+    }
+    
+    html += `
+                </div>
+            </div>
+            
+            <!-- Stored Weapons -->
+            <div style="flex: 1;">
+                <h3 style="color: #90EE90; margin-bottom: 10px;">Stored Weapons:</h3>
+                <div style="max-height: 200px; overflow-y: auto; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px;">
+    `;
+    
+    if (chest.storedWeapons.length === 0) {
+        html += '<div style="text-align: center; color: #888;">No weapons stored</div>';
+    } else {
+        for (let i = 0; i < chest.storedWeapons.length; i++) {
+            const weapon = chest.storedWeapons[i];
+            html += `
+                <div style="margin: 5px 0; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 5px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="retrieveWeapon(${i})">
+                    <span>${weapon}</span>
+                    <button style="background: #4ecdc4; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer;">Take</button>
+                </div>
+            `;
+        }
+    }
+    
+    html += `
+                </div>
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="closeChestInterface()" style="background: #ff6b6b; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px;">Close Chest</button>
+        </div>
+    `;
+    
+    chestUI.innerHTML = html;
+}
+
+function storeWeapon(weaponIndex) {
+    const chest = gameState.activeChest;
+    if (!chest || weaponIndex === gameState.player.currentWeapon) {
+        // Can't store currently equipped weapon
+        return;
+    }
+    
+    const weapon = gameState.player.weapons[weaponIndex];
+    
+    // Move weapon from player to chest
+    chest.storedWeapons.push(weapon);
+    gameState.player.weapons.splice(weaponIndex, 1);
+    gameState.player.weaponsCollected--;
+    
+    // Adjust current weapon index if needed
+    if (gameState.player.currentWeapon > weaponIndex) {
+        gameState.player.currentWeapon--;
+    } else if (gameState.player.currentWeapon === weaponIndex) {
+        gameState.player.currentWeapon = 0; // Default to first weapon
+    }
+    
+    // Update UI
+    const currentWeaponName = gameState.player.weapons[gameState.player.currentWeapon];
+    document.getElementById('currentWeapon').textContent = currentWeaponName;
+    document.getElementById('weaponDescription').textContent = getWeaponDescription(currentWeaponName);
+    document.getElementById('weaponCount').textContent = gameState.player.weaponsCollected + '/50';
+    
+    // Update chest indicator
+    updateChestIndicator(chest);
+    updateChestInterface(chest);
+}
+
+function retrieveWeapon(weaponIndex) {
+    const chest = gameState.activeChest;
+    if (!chest) return;
+    
+    const weapon = chest.storedWeapons[weaponIndex];
+    
+    // Check if player already has this weapon
+    if (gameState.player.weapons.includes(weapon)) {
+        return; // Player already has this weapon
+    }
+    
+    // Move weapon from chest to player
+    gameState.player.weapons.push(weapon);
+    gameState.player.weaponsCollected++;
+    chest.storedWeapons.splice(weaponIndex, 1);
+    
+    // Update UI
+    document.getElementById('weaponCount').textContent = gameState.player.weaponsCollected + '/50';
+    
+    // Update chest indicator
+    updateChestIndicator(chest);
+    updateChestInterface(chest);
+}
+
+function closeChestInterface() {
+    const chestUI = document.getElementById('chestInterface');
+    if (chestUI) {
+        chestUI.style.display = 'none';
+    }
+    
+    gameState.activeChest = null;
+    gameState.gameStarted = true; // Resume game
+}
+
+function updateChestIndicator(chest) {
+    if (chest.storedWeapons.length > 0) {
+        // Green glow when chest has items
+        chest.indicator.material.emissiveColor = new BABYLON.Color3(0.1, 0.4, 0.1);
+        chest.indicator.material.diffuseColor = new BABYLON.Color3(0.2, 0.8, 0.2);
+    } else {
+        // Dim when empty
+        chest.indicator.material.emissiveColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+        chest.indicator.material.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+    }
 }
 
 function checkCollisions(scene) {
@@ -1652,8 +2303,23 @@ function checkCollisions(scene) {
                                 gameState.enemies.splice(index, 1);
                             }
                             
-                            // Spawn new enemy after delay
-                            setTimeout(() => createEnemy(scene), 3000);
+                            // Check if this was the boss
+                            if (enemy.isBoss) {
+                                alert("YOU WIN! You defeated the Giant Boss Robot!");
+                                gameState.gameStarted = false; // End the game
+                            } else {
+                                // Increment kill counter only for regular enemies
+                                gameState.killCount++;
+                                
+                                // Check for boss spawn
+                                if (gameState.killCount >= 20 && !gameState.bossSpawned) {
+                                    gameState.bossSpawned = true;
+                                    setTimeout(() => createBossEnemy(scene), 2000);
+                                } else {
+                                    // Spawn new enemy after delay
+                                    setTimeout(() => createEnemy(scene), 3000);
+                                }
+                            }
                         });
                     }
                 } else {
@@ -1675,8 +2341,23 @@ function checkCollisions(scene) {
                                 gameState.enemies.splice(index, 1);
                             }
                             
-                            // Spawn new enemy after delay
-                            setTimeout(() => createEnemy(scene), 3000);
+                            // Check if this was the boss
+                            if (enemy.isBoss) {
+                                alert("YOU WIN! You defeated the Giant Boss Robot!");
+                                gameState.gameStarted = false; // End the game
+                            } else {
+                                // Increment kill counter only for regular enemies
+                                gameState.killCount++;
+                                
+                                // Check for boss spawn
+                                if (gameState.killCount >= 20 && !gameState.bossSpawned) {
+                                    gameState.bossSpawned = true;
+                                    setTimeout(() => createBossEnemy(scene), 2000);
+                                } else {
+                                    // Spawn new enemy after delay
+                                    setTimeout(() => createEnemy(scene), 3000);
+                                }
+                            }
                         });
                     }
                 }
@@ -1699,19 +2380,25 @@ function createHitEffect(scene, position) {
 }
 
 function enemyShoot(scene, enemy, camera) {
-    const projectile = BABYLON.MeshBuilder.CreateSphere("enemyProjectile", {diameter: 0.4}, scene);
+    const diameter = enemy.isBoss ? 0.8 : 0.4; // Bigger projectiles for boss
+    const projectile = BABYLON.MeshBuilder.CreateSphere("enemyProjectile", {diameter: diameter}, scene);
     projectile.position = enemy.position.clone();
-    projectile.position.y += 1;
+    projectile.position.y += enemy.isBoss ? 3 : 1; // Higher spawn point for bigger boss
     
     // Calculate direction to player
     projectile.direction = camera.position.subtract(enemy.position).normalize();
-    projectile.speed = 1.5;
-    projectile.damage = 8;
+    projectile.speed = enemy.isBoss ? 2.5 : 1.5; // Faster projectiles for boss
+    projectile.damage = enemy.isBoss ? 25 : 8; // Much more damage for boss
     
-    // Red enemy projectiles
+    // Different colors for boss vs regular enemy projectiles
     const material = new BABYLON.StandardMaterial("enemyProjectileMaterial", scene);
-    material.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2);
-    material.emissiveColor = new BABYLON.Color3(1, 0.2, 0.2);
+    if (enemy.isBoss) {
+        material.diffuseColor = new BABYLON.Color3(1, 0, 1); // Purple for boss
+        material.emissiveColor = new BABYLON.Color3(1, 0, 1);
+    } else {
+        material.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2); // Red for regular enemies
+        material.emissiveColor = new BABYLON.Color3(1, 0.2, 0.2);
+    }
     projectile.material = material;
     
     gameState.enemyProjectiles.push(projectile);
@@ -2382,6 +3069,15 @@ function startGame() {
     document.getElementById('crosshair').style.display = 'block';
     document.getElementById('ui').style.display = 'block';
     document.getElementById('instructions').style.display = 'block';
+    
+    // Show/hide mobile controls based on device type
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                     ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    
+    const mobileControlsElement = document.getElementById('mobileControls');
+    if (mobileControlsElement) {
+        mobileControlsElement.style.display = isMobile ? 'block' : 'none';
+    }
     
     gameState.gameStarted = true;
     gameState.player.invulnerableUntil = Date.now() + 10000; // 10 seconds invulnerability
