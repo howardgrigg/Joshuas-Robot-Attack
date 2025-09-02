@@ -536,8 +536,8 @@ function createEnemy(scene) {
     
     enemy.health = 60;
     enemy.maxHealth = 60;
-    enemy.speed = 0.02;
-    enemy.originalSpeed = 0.02;
+    enemy.speed = 0.10; // 5x faster
+    enemy.originalSpeed = 0.10;
     enemy.lastAttack = 0;
     enemy.lastShot = 0;
     enemy.checkCollisions = true;
@@ -548,6 +548,10 @@ function createEnemy(scene) {
     enemy.poisonTime = 0;
     enemy.poisonDamage = 0;
     enemy.lastPoisonTick = 0;
+    enemy.canJump = true; // All robots can jump over obstacles
+    enemy.lastJump = 0; // Jump cooldown
+    enemy.stuckTimer = 0; // Track how long robot has been stuck
+    enemy.lastPosition = enemy.position.clone(); // Track position for stuck detection
     
     // Animation properties
     enemy.animationTime = 0;
@@ -711,8 +715,8 @@ function createBossEnemy(scene) {
     
     boss.health = 1000;
     boss.maxHealth = 1000;
-    boss.speed = 0.01; // Slower than regular enemies
-    boss.originalSpeed = 0.01;
+    boss.speed = 0.25; // 5x faster than before
+    boss.originalSpeed = 0.25;
     boss.lastAttack = 0;
     boss.lastShot = 0;
     boss.checkCollisions = true;
@@ -720,6 +724,10 @@ function createBossEnemy(scene) {
     boss.isBoss = true; // Mark as boss enemy
     boss.attackDamage = 50; // Much stronger attacks
     boss.shootCooldown = 1000; // Faster shooting
+    boss.canJump = true; // Boss can jump over obstacles
+    boss.lastJump = 0; // Jump cooldown
+    boss.stuckTimer = 0; // Track how long boss has been stuck
+    boss.lastPosition = boss.position.clone(); // Track position for stuck detection
     
     // Animation properties
     boss.animationTime = 0;
@@ -730,6 +738,11 @@ function createBossEnemy(scene) {
     createHealthBar(scene, boss);
     
     gameState.enemies.push(boss);
+    
+    // Resume audio context in case it got suspended
+    if (gameState.audioContext && gameState.audioContext.state === 'suspended') {
+        gameState.audioContext.resume();
+    }
     
     // Show boss arrival message
     alert("GIANT BOSS ROBOT APPEARED! Defeat it to win!");
@@ -1134,6 +1147,37 @@ function shoot(scene, camera) {
     createProjectile(scene, camera, weapon);
     playWeaponSound(weapon);
     gameState.player.lastShot = currentTime;
+    
+    // Start reload indicator
+    updateReloadStatus(weaponConfig);
+}
+
+function updateReloadStatus(weaponConfig) {
+    const reloadElement = document.getElementById('reloadStatus');
+    const fireRate = weaponConfig ? weaponConfig.fireRate : 100;
+    
+    // Show reloading status
+    reloadElement.textContent = 'Reloading...';
+    reloadElement.classList.add('reloading');
+    
+    // Clear reload status after cooldown
+    setTimeout(() => {
+        reloadElement.textContent = 'Ready';
+        reloadElement.classList.remove('reloading');
+    }, fireRate);
+}
+
+function flashDamageScreen() {
+    // Use the damage overlay for a more visible flash
+    const overlay = document.getElementById('damageOverlay');
+    if (overlay) {
+        overlay.classList.add('flash');
+        
+        // Remove flash class after animation
+        setTimeout(() => {
+            overlay.classList.remove('flash');
+        }, 300);
+    }
 }
 
 function createProjectile(scene, camera, weaponType) {
@@ -1420,207 +1464,207 @@ function getWeaponConfig(weaponType) {
     const configs = {
         'Basic Blaster': new Weapon('Basic Blaster', { 
             speed: 2, damage: 20, color: new BABYLON.Color3(0, 1, 1), 
-            projectileType: 'energy', size: 0.5 
+            projectileType: 'energy', size: 0.5, fireRate: 150
         }),
         'Plasma Rifle': new Weapon('Plasma Rifle', { 
             speed: 2.5, damage: 25, color: new BABYLON.Color3(0, 1, 0.5), 
-            projectileType: 'energy', size: 0.6, trail: true 
+            projectileType: 'energy', size: 0.6, trail: true, fireRate: 200
         }),
         'Lightning Gun': new Weapon('Lightning Gun', { 
             speed: 3, damage: 30, color: new BABYLON.Color3(1, 1, 0), 
-            projectileType: 'beam', trail: true 
+            projectileType: 'beam', trail: true, fireRate: 300
         }),
         'Fire Staff': new Weapon('Fire Staff', { 
             speed: 2.2, damage: 35, color: new BABYLON.Color3(1, 0, 0), 
-            projectileType: 'elemental', size: 0.7 
+            projectileType: 'elemental', size: 0.7, fireRate: 400
         }),
         'Ice Cannon': new Weapon('Ice Cannon', { 
             speed: 1.8, damage: 25, color: new BABYLON.Color3(0.5, 0.8, 1), 
-            projectileType: 'elemental', size: 0.8 
+            projectileType: 'elemental', size: 0.8, fireRate: 250
         }),
         'Freeze Gun': new Weapon('Freeze Gun', { 
             speed: 2.5, damage: 0, color: new BABYLON.Color3(0.7, 0.9, 1), 
-            projectileType: 'elemental', size: 0.6 
+            projectileType: 'elemental', size: 0.6, fireRate: 100
         }),
         'Rocket Launcher': new Weapon('Rocket Launcher', { 
             speed: 1.5, damage: 50, color: new BABYLON.Color3(1, 0.5, 0), 
-            projectileType: 'rocket', trail: true 
+            projectileType: 'rocket', trail: true, fireRate: 1200
         }),
         'Grenade Launcher': new Weapon('Grenade Launcher', { 
             speed: 1.2, damage: 60, color: new BABYLON.Color3(0.8, 0.4, 0), 
-            projectileType: 'rocket', spread: 0.2 
+            projectileType: 'rocket', spread: 0.2, fireRate: 1500
         }),
         'Laser Cannon': new Weapon('Laser Cannon', { 
             speed: 4, damage: 40, color: new BABYLON.Color3(1, 0, 0), 
-            projectileType: 'laser', trail: true 
+            projectileType: 'laser', trail: true, fireRate: 600
         }),
         'Photon Beam': new Weapon('Photon Beam', { 
             speed: 3.5, damage: 35, color: new BABYLON.Color3(1, 1, 1), 
-            projectileType: 'beam' 
+            projectileType: 'beam', fireRate: 450
         }),
         'Quantum Blaster': new Weapon('Quantum Blaster', { 
             speed: 3, damage: 45, color: new BABYLON.Color3(0.5, 0, 1), 
-            projectileType: 'energy', size: 0.8, trail: true 
+            projectileType: 'energy', size: 0.8, trail: true, fireRate: 800
         }),
         'Sonic Boom': new Weapon('Sonic Boom', { 
             speed: 2.8, damage: 32, color: new BABYLON.Color3(0.7, 0.7, 0.7), 
-            projectileType: 'energy', spread: 0.3, projectileCount: 3 
+            projectileType: 'energy', spread: 0.3, projectileCount: 3, fireRate: 350
         }),
         'Gravity Gun': new Weapon('Gravity Gun', { 
             speed: 2, damage: 38, color: new BABYLON.Color3(0.4, 0.2, 0.8), 
-            projectileType: 'energy', size: 1.0 
+            projectileType: 'energy', size: 1.0, fireRate: 550
         }),
         'Energy Sword': new Weapon('Energy Sword', { 
             speed: 1.5, damage: 55, color: new BABYLON.Color3(0, 1, 0), 
-            projectileType: 'beam', size: 0.3 
+            projectileType: 'beam', size: 0.3, fireRate: 1300
         }),
         'Fusion Rifle': new Weapon('Fusion Rifle', { 
             speed: 2.3, damage: 42, color: new BABYLON.Color3(1, 0.8, 0), 
-            projectileType: 'energy', trail: true 
+            projectileType: 'energy', trail: true, fireRate: 700
         }),
         'Particle Beam': new Weapon('Particle Beam', { 
             speed: 3.2, damage: 36, color: new BABYLON.Color3(0.8, 0, 0.8), 
-            projectileType: 'beam', trail: true 
+            projectileType: 'beam', trail: true, fireRate: 500
         }),
         'Void Blaster': new Weapon('Void Blaster', { 
             speed: 2.1, damage: 48, color: new BABYLON.Color3(0.1, 0.1, 0.1), 
-            projectileType: 'energy', size: 0.9 
+            projectileType: 'energy', size: 0.9, fireRate: 1000
         }),
         'Storm Caller': new Weapon('Storm Caller', { 
             speed: 2.7, damage: 33, color: new BABYLON.Color3(0.3, 0.3, 0.8), 
-            projectileType: 'elemental', spread: 0.1, projectileCount: 2 
+            projectileType: 'elemental', spread: 0.1, projectileCount: 2, fireRate: 380
         }),
         'Sun Beam': new Weapon('Sun Beam', { 
             speed: 3.8, damage: 44, color: new BABYLON.Color3(1, 1, 0.3), 
-            projectileType: 'laser', trail: true 
+            projectileType: 'laser', trail: true, fireRate: 750
         }),
         'Moon Ray': new Weapon('Moon Ray', { 
             speed: 2.9, damage: 29, color: new BABYLON.Color3(0.7, 0.7, 0.9), 
-            projectileType: 'beam' 
+            projectileType: 'beam', fireRate: 280
         }),
         'Star Shooter': new Weapon('Star Shooter', { 
             speed: 3.1, damage: 41, color: new BABYLON.Color3(1, 1, 0.8), 
-            projectileType: 'energy', size: 0.4, projectileCount: 5, spread: 0.4 
+            projectileType: 'energy', size: 0.4, projectileCount: 5, spread: 0.4, fireRate: 650
         }),
         'Dragon Breath': new Weapon('Dragon Breath', { 
             speed: 2.4, damage: 52, color: new BABYLON.Color3(1, 0.3, 0), 
-            projectileType: 'elemental', spread: 0.3, projectileCount: 3 
+            projectileType: 'elemental', spread: 0.3, projectileCount: 3, fireRate: 1250
         }),
         'Phoenix Fire': new Weapon('Phoenix Fire', { 
             speed: 2.6, damage: 46, color: new BABYLON.Color3(1, 0.6, 0.1), 
-            projectileType: 'elemental', trail: true 
+            projectileType: 'elemental', trail: true, fireRate: 900
         }),
         'Ice Storm': new Weapon('Ice Storm', { 
             speed: 2.2, damage: 28, color: new BABYLON.Color3(0.6, 0.9, 1), 
-            projectileType: 'elemental', spread: 0.5, projectileCount: 4 
+            projectileType: 'elemental', spread: 0.5, projectileCount: 4, fireRate: 320
         }),
         'Thunder Strike': new Weapon('Thunder Strike', { 
             speed: 3.4, damage: 39, color: new BABYLON.Color3(0.9, 0.9, 0.2), 
-            projectileType: 'beam', trail: true 
+            projectileType: 'beam', trail: true, fireRate: 580
         }),
         'Wind Blade': new Weapon('Wind Blade', { 
             speed: 3.6, damage: 31, color: new BABYLON.Color3(0.8, 1, 0.8), 
-            projectileType: 'beam', size: 0.2 
+            projectileType: 'beam', size: 0.2, fireRate: 330
         }),
         'Earth Shaker': new Weapon('Earth Shaker', { 
             speed: 1.8, damage: 58, color: new BABYLON.Color3(0.6, 0.4, 0.2), 
-            projectileType: 'rocket', size: 1.2 
+            projectileType: 'rocket', size: 1.2, fireRate: 1400
         }),
         'Water Cannon': new Weapon('Water Cannon', { 
             speed: 2.5, damage: 26, color: new BABYLON.Color3(0.2, 0.6, 1), 
-            projectileType: 'elemental', spread: 0.2 
+            projectileType: 'elemental', spread: 0.2, fireRate: 260
         }),
         'Poison Dart': new Weapon('Poison Dart', { 
             speed: 2.8, damage: 22, color: new BABYLON.Color3(0.4, 0.8, 0.2), 
-            projectileType: 'arrow', special: 'poison' 
+            projectileType: 'arrow', special: 'poison', fireRate: 180
         }),
         'Acid Sprayer': new Weapon('Acid Sprayer', { 
             speed: 2.1, damage: 34, color: new BABYLON.Color3(0.6, 1, 0.2), 
-            projectileType: 'elemental', spread: 0.4, projectileCount: 3, special: 'poison' 
+            projectileType: 'elemental', spread: 0.4, projectileCount: 3, special: 'poison', fireRate: 420
         }),
         'Venom Shot': new Weapon('Venom Shot', { 
             speed: 2.7, damage: 27, color: new BABYLON.Color3(0.5, 0.2, 0.8), 
-            projectileType: 'energy', trail: true, special: 'poison' 
+            projectileType: 'energy', trail: true, special: 'poison', fireRate: 270
         }),
         'Crystal Gun': new Weapon('Crystal Gun', { 
             speed: 2.4, damage: 37, color: new BABYLON.Color3(0.9, 0.5, 0.9), 
-            projectileType: 'energy', size: 0.4, projectileCount: 3, spread: 0.2 
+            projectileType: 'energy', size: 0.4, projectileCount: 3, spread: 0.2, fireRate: 520
         }),
         'Diamond Shooter': new Weapon('Diamond Shooter', { 
             speed: 3.3, damage: 43, color: new BABYLON.Color3(1, 1, 1), 
-            projectileType: 'energy', trail: true 
+            projectileType: 'energy', trail: true, fireRate: 720
         }),
         'Ruby Laser': new Weapon('Ruby Laser', { 
             speed: 2.9, damage: 40, color: new BABYLON.Color3(1, 0.2, 0.2), 
-            projectileType: 'laser' 
+            projectileType: 'laser', fireRate: 620
         }),
         'Emerald Beam': new Weapon('Emerald Beam', { 
             speed: 2.6, damage: 35, color: new BABYLON.Color3(0.2, 1, 0.2), 
-            projectileType: 'beam' 
+            projectileType: 'beam', fireRate: 430
         }),
         'Sapphire Blast': new Weapon('Sapphire Blast', { 
             speed: 2.8, damage: 38, color: new BABYLON.Color3(0.2, 0.2, 1), 
-            projectileType: 'energy', size: 0.7 
+            projectileType: 'energy', size: 0.7, fireRate: 560
         }),
         'Shadow Gun': new Weapon('Shadow Gun', { 
             speed: 3.2, damage: 41, color: new BABYLON.Color3(0.2, 0.2, 0.2), 
-            projectileType: 'energy', trail: true 
+            projectileType: 'energy', trail: true, fireRate: 680
         }),
         'Light Ray': new Weapon('Light Ray', { 
             speed: 4.2, damage: 36, color: new BABYLON.Color3(1, 1, 0.9), 
-            projectileType: 'laser', trail: true 
+            projectileType: 'laser', trail: true, fireRate: 480
         }),
         'Time Warp': new Weapon('Time Warp', { 
             speed: 1.9, damage: 49, color: new BABYLON.Color3(0.7, 0.3, 0.9), 
-            projectileType: 'energy', size: 1.0 
+            projectileType: 'energy', size: 1.0, fireRate: 1100
         }),
         'Space Ripper': new Weapon('Space Ripper', { 
             speed: 3.5, damage: 47, color: new BABYLON.Color3(0.1, 0.1, 0.9), 
-            projectileType: 'beam', trail: true 
+            projectileType: 'beam', trail: true, fireRate: 950
         }),
         'Black Hole': new Weapon('Black Hole', { 
             speed: 1.3, damage: 65, color: new BABYLON.Color3(0.1, 0.1, 0.1), 
-            projectileType: 'energy', size: 1.5 
+            projectileType: 'energy', size: 1.5, fireRate: 2000
         }),
         'Rainbow Beam': new Weapon('Rainbow Beam', { 
             speed: 2.7, damage: 33, color: new BABYLON.Color3(1, 0.5, 1), 
-            projectileType: 'beam', trail: true 
+            projectileType: 'beam', trail: true, fireRate: 380
         }),
         'Unicorn Horn': new Weapon('Unicorn Horn', { 
             speed: 2.9, damage: 44, color: new BABYLON.Color3(1, 0.8, 1), 
-            projectileType: 'magic', trail: true 
+            projectileType: 'magic', trail: true, fireRate: 780
         }),
         'Magic Wand': new Weapon('Magic Wand', { 
             speed: 2.2, damage: 39, color: new BABYLON.Color3(0.8, 0.4, 1), 
-            projectileType: 'magic' 
+            projectileType: 'magic', fireRate: 590
         }),
         'Wizard Staff': new Weapon('Wizard Staff', { 
             speed: 2.1, damage: 51, color: new BABYLON.Color3(0.5, 0.2, 0.8), 
-            projectileType: 'magic', size: 0.8 
+            projectileType: 'magic', size: 0.8, fireRate: 1200
         }),
         'Fairy Dust': new Weapon('Fairy Dust', { 
             speed: 3.7, damage: 24, color: new BABYLON.Color3(1, 0.9, 0.7), 
-            projectileType: 'magic', spread: 0.6, projectileCount: 7 
+            projectileType: 'magic', spread: 0.6, projectileCount: 7, fireRate: 300
         }),
         'Robot Zapper': new Weapon('Robot Zapper', { 
             speed: 2.8, damage: 42, color: new BABYLON.Color3(0.2, 0.8, 0.8), 
-            projectileType: 'beam', trail: true 
+            projectileType: 'beam', trail: true, fireRate: 700
         }),
         'Mech Buster': new Weapon('Mech Buster', { 
             speed: 2.3, damage: 56, color: new BABYLON.Color3(0.7, 0.2, 0.2), 
-            projectileType: 'rocket', trail: true 
+            projectileType: 'rocket', trail: true, fireRate: 1350
         }),
         'Cyber Shot': new Weapon('Cyber Shot', { 
             speed: 3.1, damage: 34, color: new BABYLON.Color3(0.3, 1, 0.3), 
-            projectileType: 'energy', trail: true 
+            projectileType: 'energy', trail: true, fireRate: 410
         }),
         'Data Stream': new Weapon('Data Stream', { 
             speed: 3.9, damage: 28, color: new BABYLON.Color3(0, 0.8, 1), 
-            projectileType: 'beam', spread: 0.1, projectileCount: 3 
+            projectileType: 'beam', spread: 0.1, projectileCount: 3, fireRate: 340
         }),
         'Code Cannon': new Weapon('Code Cannon', { 
             speed: 2.4, damage: 46, color: new BABYLON.Color3(0.5, 0.5, 1), 
-            projectileType: 'energy', size: 0.6 
+            projectileType: 'energy', size: 0.6, fireRate: 880
         })
     };
     return configs[weaponType] || configs['Basic Blaster'];
@@ -1737,11 +1781,11 @@ function updateGame(scene, camera) {
         }
         if (typeof enemy.speed !== 'number') {
             if (enemy.isBoss) {
-                enemy.speed = 0.01;
-                enemy.originalSpeed = 0.01;
+                enemy.speed = 0.25;
+                enemy.originalSpeed = 0.25;
             } else {
-                enemy.speed = 0.02;
-                enemy.originalSpeed = 0.02;
+                enemy.speed = 0.10;
+                enemy.originalSpeed = 0.10;
             }
         }
         if (enemy.isFrozen === undefined) {
@@ -1749,6 +1793,13 @@ function updateGame(scene, camera) {
         }
         if (enemy.isPoisoned === undefined) {
             enemy.isPoisoned = false;
+        }
+        if (enemy.canJump === undefined) {
+            enemy.canJump = true;
+            enemy.lastJump = 0;
+            enemy.stuckTimer = 0;
+            enemy.lastPosition = enemy.position.clone();
+            enemy.isJumping = false;
         }
         
         // Check if enemy should unfreeze
@@ -1802,6 +1853,9 @@ function updateGame(scene, camera) {
             }
         }
         
+        // Apply gravity to all robots (even when frozen)
+        applyRobotGravity(enemy);
+        
         // Skip AI if frozen
         if (enemy.isFrozen) return;
         
@@ -1843,6 +1897,9 @@ function updateGame(scene, camera) {
             enemy.lastAttack = currentTime;
             document.getElementById('health').textContent = gameState.player.health;
             
+            // Flash screen red when hurt
+            flashDamageScreen();
+            
             if (gameState.player.health <= 0) {
                 alert('Game Over! Refresh to play again.');
             }
@@ -1862,8 +1919,9 @@ function updateGame(scene, camera) {
             if (!enemy || !enemy.position || enemy.health <= 0) continue;
             
             const distance = BABYLON.Vector3.Distance(projectile.position, enemy.position);
+            const hitRadius = enemy.isBoss ? 4.0 : 1.5; // Boss has much larger hitbox
             
-            if (distance < 1.5) {
+            if (distance < hitRadius) {
                 // Buddy hit enemy
                 createHitEffect(scene, enemy.position);
                 playHitSound();
@@ -1920,6 +1978,9 @@ function updateGame(scene, camera) {
         if (distanceToPlayer < 1 && Date.now() > gameState.player.invulnerableUntil) {
             gameState.player.health -= projectile.damage;
             document.getElementById('health').textContent = gameState.player.health;
+            
+            // Flash screen red when hurt
+            flashDamageScreen();
             
             // Create hit effect
             createHitEffect(scene, camera.position);
@@ -2029,6 +2090,19 @@ function updateGame(scene, camera) {
     // Update UI
     document.getElementById('enemyCount').textContent = gameState.enemies.length;
     document.getElementById('killCount').textContent = gameState.killCount;
+    
+    // Update reload status based on current cooldown
+    const now = Date.now();
+    const weapon = gameState.player.weapons[gameState.player.currentWeapon];
+    const weaponConfig = getWeaponConfig(weapon);
+    const fireRate = weaponConfig ? weaponConfig.fireRate : 100;
+    const timeLeft = Math.max(0, fireRate - (now - gameState.player.lastShot));
+    
+    if (timeLeft > 0) {
+        const reloadElement = document.getElementById('reloadStatus');
+        reloadElement.textContent = `${Math.ceil(timeLeft / 100) / 10}s`;
+        reloadElement.classList.add('reloading');
+    }
 }
 
 function showChestPrompt(chest) {
@@ -2268,8 +2342,9 @@ function checkCollisions(scene) {
             if (!enemy || !enemy.position || enemy.health <= 0) continue;
             
             const distance = BABYLON.Vector3.Distance(projectile.position, enemy.position);
+            const hitRadius = enemy.isBoss ? 4.0 : 1.5; // Boss has much larger hitbox
             
-            if (distance < 1.5) {
+            if (distance < hitRadius) {
                 // Create hit effect
                 createHitEffect(scene, enemy.position);
                 playHitSound();
@@ -2405,19 +2480,38 @@ function enemyShoot(scene, enemy, camera) {
 }
 
 function moveEnemyWithAvoidance(enemy, camera) {
-    // Simple obstacle avoidance - cast rays to detect obstacles
+    const currentTime = Date.now();
     const desiredDirection = camera.position.subtract(enemy.position).normalize();
     const currentPos = enemy.position;
+    
+    // Check if robot is stuck (hasn't moved much in the last second)
+    if (enemy.lastPosition && currentTime - (enemy.lastPositionCheck || 0) > 1000) {
+        const distanceMoved = BABYLON.Vector3.Distance(enemy.position, enemy.lastPosition);
+        if (distanceMoved < 0.5) {
+            enemy.stuckTimer += 1000;
+        } else {
+            enemy.stuckTimer = 0;
+        }
+        enemy.lastPosition = enemy.position.clone();
+        enemy.lastPositionCheck = currentTime;
+    }
     
     // Check for obstacles in front
     const frontRay = new BABYLON.Ray(currentPos, desiredDirection);
     const hit = enemy.getScene().pickWithRay(frontRay, (mesh) => {
-        return mesh.name.includes('rock') || mesh.name.includes('trunk');
+        return mesh.name.includes('rock') || mesh.name.includes('trunk') || mesh.name.includes('hill');
     });
     
     let moveDirection = desiredDirection;
+    let shouldJump = false;
     
-    if (hit.hit && hit.distance < 4) {
+    // If stuck for more than 2 seconds or hitting an obstacle, try to jump
+    if ((enemy.stuckTimer > 2000 || (hit.hit && hit.distance < 4)) && 
+        enemy.canJump && currentTime - enemy.lastJump > 3000) {
+        shouldJump = true;
+        enemy.lastJump = currentTime;
+        enemy.stuckTimer = 0; // Reset stuck timer after jumping
+    } else if (hit.hit && hit.distance < 4) {
         // Obstacle detected, try to go around it
         const avoidanceAngle = Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2;
         const avoidDirection = new BABYLON.Vector3(
@@ -2436,8 +2530,28 @@ function moveEnemyWithAvoidance(enemy, camera) {
     enemy.isMoving = true;
     enemy.lastDirection = moveDirection;
     
-    // Move the enemy
-    enemy.position.addInPlace(moveDirection.scale(enemy.speed));
+    // Perform jump if needed
+    if (shouldJump) {
+        // Add upward velocity for jump
+        const jumpHeight = enemy.isBoss ? 8 : 6; // Boss jumps higher
+        const jumpDistance = enemy.isBoss ? 2.0 : 1.5; // Boss jumps farther
+        
+        enemy.position.y += jumpHeight;
+        enemy.position.addInPlace(moveDirection.scale(jumpDistance));
+        
+        // Create jump dust effect
+        createJumpEffect(enemy.getScene(), enemy.position);
+        
+        // Mark as jumping to handle landing
+        enemy.isJumping = true;
+        enemy.jumpStartTime = currentTime;
+    } else {
+        // Regular movement
+        enemy.position.addInPlace(moveDirection.scale(enemy.speed));
+    }
+    
+    // Apply gravity and ground collision for all robots
+    applyRobotGravity(enemy);
     
     // Animate walking
     animateRobotWalking(enemy);
@@ -2447,6 +2561,76 @@ function moveEnemyWithAvoidance(enemy, camera) {
     if (distanceToPlayer < 20) { // Only play if close enough to hear
         playRobotFootstep(enemy, camera, distanceToPlayer);
     }
+}
+
+function applyRobotGravity(enemy) {
+    const scene = enemy.getScene();
+    
+    // Create a downward ray from the robot's position
+    const rayStart = enemy.position.clone();
+    rayStart.y += 0.5; // Start slightly above robot center
+    const rayDirection = new BABYLON.Vector3(0, -1, 0);
+    const downRay = new BABYLON.Ray(rayStart, rayDirection);
+    
+    // Cast ray to find ground
+    const groundHit = scene.pickWithRay(downRay, (mesh) => {
+        return mesh.name.includes('Ground') || mesh.name.includes('ground') || 
+               mesh.name.includes('hill') || mesh.name.includes('platform') ||
+               mesh.name === 'mainGround';
+    });
+    
+    if (groundHit.hit) {
+        // Calculate proper ground height (robot bottom should touch ground)
+        const robotHeight = enemy.isBoss ? 4.5 : 2; // Boss is much taller (6 unit body + legs)
+        const targetY = groundHit.pickedPoint.y + robotHeight;
+        
+        if (enemy.isJumping) {
+            // During jump, allow falling back to ground
+            const jumpDuration = Date.now() - (enemy.jumpStartTime || 0);
+            if (jumpDuration > 500) { // After 500ms, start falling
+                if (enemy.position.y > targetY) {
+                    enemy.position.y = Math.max(targetY, enemy.position.y - 0.3); // Fall down
+                } else {
+                    enemy.position.y = targetY;
+                    enemy.isJumping = false; // Landed
+                }
+            }
+        } else {
+            // When not jumping, stick to ground
+            enemy.position.y = targetY;
+        }
+    } else {
+        // No ground found, use default height
+        const defaultGroundY = enemy.isBoss ? 4.5 : 2;
+        if (!enemy.isJumping) {
+            enemy.position.y = defaultGroundY;
+        }
+    }
+}
+
+function createJumpEffect(scene, position) {
+    // Create dust cloud effect when robot jumps
+    const dustCloud = BABYLON.MeshBuilder.CreateSphere("jumpDust", {diameter: 2}, scene);
+    dustCloud.position = position.clone();
+    dustCloud.position.y = 1; // At ground level
+    
+    const dustMaterial = new BABYLON.StandardMaterial("dustMaterial", scene);
+    dustMaterial.diffuseColor = new BABYLON.Color3(0.6, 0.5, 0.4);
+    dustMaterial.alpha = 0.5;
+    dustCloud.material = dustMaterial;
+    
+    // Animate the dust cloud
+    let scale = 0.1;
+    const dustAnimation = setInterval(() => {
+        scale += 0.1;
+        dustCloud.scaling = new BABYLON.Vector3(scale, scale, scale);
+        dustMaterial.alpha -= 0.05;
+        
+        if (dustMaterial.alpha <= 0) {
+            dustCloud.dispose();
+            clearInterval(dustAnimation);
+        }
+    }, 50);
 }
 
 function rotateEnemyTowards(enemy, direction) {
@@ -2920,6 +3104,11 @@ function initializeSounds(scene) {
 function createBeepSound(frequency, duration, volume = 0.1) {
     if (!gameState.audioContext) return;
     
+    // Resume audio context if suspended (common browser requirement)
+    if (gameState.audioContext.state === 'suspended') {
+        gameState.audioContext.resume();
+    }
+    
     const oscillator = gameState.audioContext.createOscillator();
     const gainNode = gameState.audioContext.createGain();
     
@@ -3061,9 +3250,25 @@ function dropWeapon(scene, position) {
 }
 
 // Initialize welcome screen
-document.getElementById('welcomeScreen').addEventListener('click', startGame);
+function initializeWelcomeScreen() {
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    if (welcomeScreen) {
+        welcomeScreen.addEventListener('click', startGame);
+        console.log('Welcome screen click handler added');
+    } else {
+        console.error('Welcome screen element not found');
+    }
+}
+
+// Try to initialize immediately and also on DOMContentLoaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeWelcomeScreen);
+} else {
+    initializeWelcomeScreen();
+}
 
 function startGame() {
+    console.log('startGame function called');
     document.getElementById('welcomeScreen').style.display = 'none';
     document.getElementById('gameCanvas').style.display = 'block';
     document.getElementById('crosshair').style.display = 'block';
@@ -3081,6 +3286,11 @@ function startGame() {
     
     gameState.gameStarted = true;
     gameState.player.invulnerableUntil = Date.now() + 10000; // 10 seconds invulnerability
+    
+    // Resume audio context when game starts (browser requirement)
+    if (gameState.audioContext && gameState.audioContext.state === 'suspended') {
+        gameState.audioContext.resume();
+    }
     gameState.obstacles = []; // Clear obstacles array for fresh start
     
     // Create the scene

@@ -98,6 +98,33 @@
             50% { opacity: 0.6; }
         }
         
+        @keyframes damageFlash {
+            0% { opacity: 0; }
+            50% { opacity: 0.4; }
+            100% { opacity: 0; }
+        }
+        
+        #damageOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(255, 0, 0, 0.5);
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0;
+        }
+        
+        #damageOverlay.flash {
+            animation: damageFlash 0.3s ease-out;
+        }
+        
+        #reloadStatus.reloading {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+        
         #controls {
             background: rgba(255,255,255,0.1);
             padding: 1rem;
@@ -277,10 +304,12 @@
     
     <canvas id="gameCanvas" style="display: none;"></canvas>
     <div id="crosshair" style="display: none;"></div>
+    <div id="damageOverlay"></div>
     <div id="ui" style="display: none;">
         <div>Health: <span id="health">200</span></div>
         <div>Buddy: <span id="buddyStatus">Ready</span></div>
         <div>Weapon: <span id="currentWeapon">Basic Blaster</span></div>
+        <div>Reload: <span id="reloadStatus">Ready</span></div>
         <div>Kills: <span id="killCount">0</span>/20 (Boss at 20)</div>
         <div>Enemies: <span id="enemyCount">0</span></div>
         <div>Weapons: <span id="weaponCount">1</span>/50</div>
