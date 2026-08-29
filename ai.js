@@ -153,7 +153,7 @@ function applyRobotGravity(enemy) {
     });
     
     if (groundHit.hit) {
-        const robotHeight = enemy.isBoss ? 4.5 : 2;
+        const robotHeight = enemy.groundOffset || (enemy.isBoss ? 4.5 : 2);
         const targetY = groundHit.pickedPoint.y + robotHeight;
         
         if (enemy.isJumping) {
@@ -173,7 +173,7 @@ function applyRobotGravity(enemy) {
         }
     } else {
         // No ground found, use default height
-        const defaultGroundY = enemy.isBoss ? 4.5 : 2;
+        const defaultGroundY = enemy.groundOffset || (enemy.isBoss ? 4.5 : 2);
         if (!enemy.isJumping) {
             enemy.position.y = defaultGroundY;
         }

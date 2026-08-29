@@ -377,6 +377,7 @@ function createLevelBoss(scene, level) {
     const s = (4 + level) / 3;  // scales the whole robot with level
     const boss = BABYLON.MeshBuilder.CreateBox("boss",
         {width: 1.7 * s, height: 2.0 * s, depth: 0.95 * s}, scene);
+    boss.groundOffset = 1.8 * s;  // distance from torso pivot to the soles
 
     const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
     const safePosition = findSafeSpawnPosition(playerPosition);
@@ -492,6 +493,7 @@ function createBossEnemy(scene) {
     const s = 2.4;
     const boss = BABYLON.MeshBuilder.CreateBox("boss",
         {width: 1.7 * s, height: 2.0 * s, depth: 0.95 * s}, scene);
+    boss.groundOffset = 1.8 * s;  // distance from torso pivot to the soles
 
     const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
     const safePosition = findSafeSpawnPosition(playerPosition);
