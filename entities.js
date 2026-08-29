@@ -33,116 +33,293 @@ function findSafeSpawnPosition(playerPosition = new BABYLON.Vector3(0, 0, 0)) {
     return position || new BABYLON.Vector3(50, 2, 50);
 }
 
+// ============================================================
+// Robot visual style helpers - shared by enemies, bosses, buddy
+// ============================================================
+
+// Glossy body panel material. style: 'mech' (sharp, high spec) or 'cartoon' (soft)
+function makeRobotMaterial(scene, name, baseColor, emissive, style) {
+    const m = new BABYLON.StandardMaterial(name, scene);
+    m.diffuseColor = baseColor;
+    m.emissiveColor = emissive || baseColor.scale(0.12);
+    if (style === 'mech') {
+        m.specularColor = new BABYLON.Color3(0.95, 0.97, 1);
+        m.specularPower = 96;
+    } else {
+        m.specularColor = new BABYLON.Color3(0.35, 0.35, 0.4);
+        m.specularPower = 24;
+    }
+    return m;
+}
+
+// Self-lit material for eyes, cores and accent lights
+function makeGlowMaterial(scene, name, color) {
+    const m = new BABYLON.StandardMaterial(name, scene);
+    m.diffuseColor = new BABYLON.Color3(0.04, 0.04, 0.04);
+    m.emissiveColor = color;
+    m.specularColor = new BABYLON.Color3(0, 0, 0);
+    return m;
+}
+
+// Metallic trim material for plating, joints and detail
+function makeTrimMaterial(scene, name, style) {
+    const m = new BABYLON.StandardMaterial(name, scene);
+    m.diffuseColor = style === 'mech'
+        ? new BABYLON.Color3(0.16, 0.17, 0.2)
+        : new BABYLON.Color3(0.82, 0.83, 0.88);
+    m.specularColor = new BABYLON.Color3(0.8, 0.8, 0.9);
+    m.specularPower = 80;
+    return m;
+}
+
+// Build a detailed robot around an existing root mesh (the torso).
+// Returns a robotParts object with the keys animation.js / combat.js expect:
+//   head, leftEye, rightEye, mouth, antenna,
+//   leftArm, rightArm, leftLeg, rightLeg, leftFoot, rightFoot
+// opts: { tag, style, s, bodyColor, emissive, eyeColor, coreColor, legs, face }
+function assembleRobot(scene, root, opts) {
+    const style = opts.style || 'cartoon';
+    const s = opts.s || 1;
+    const tag = opts.tag || 'robot';
+    const bodyColor = opts.bodyColor || new BABYLON.Color3(0.6, 0.6, 0.7);
+    const eyeColor = opts.eyeColor || new BABYLON.Color3(1, 0.12, 0.08);
+    const coreColor = opts.coreColor || (style === 'mech'
+        ? new BABYLON.Color3(0.2, 0.9, 1)
+        : new BABYLON.Color3(1, 0.85, 0.2));
+    const wantLegs = opts.legs !== false;
+    const wantFace = opts.face !== false;
+
+    // Shared materials (kept few so combat.js freeze/poison swaps stay cheap)
+    const bodyMat = makeRobotMaterial(scene, tag + 'Body', bodyColor, opts.emissive, style);
+    root.material = bodyMat;
+    const trimMat = makeTrimMaterial(scene, tag + 'Trim', style);
+    const darkMat = new BABYLON.StandardMaterial(tag + 'Dark', scene);
+    darkMat.diffuseColor = new BABYLON.Color3(0.12, 0.12, 0.14);
+    const glowMat = makeGlowMaterial(scene, tag + 'Eye', eyeColor);
+    const coreMat = makeGlowMaterial(scene, tag + 'Core', coreColor);
+
+    const parts = {};
+
+    // ---- Head ----
+    let head;
+    if (style === 'mech') {
+        head = BABYLON.MeshBuilder.CreateBox(tag + 'Head',
+            {width: 1.02 * s, height: 0.82 * s, depth: 0.96 * s}, scene);
+    } else {
+        head = BABYLON.MeshBuilder.CreateSphere(tag + 'Head', {diameter: 1.18 * s, segments: 12}, scene);
+        head.scaling.y = 0.9;
+    }
+    head.position = new BABYLON.Vector3(0, 1.5 * s, 0);
+    head.parent = root;
+    const headMat = makeRobotMaterial(scene, tag + 'HeadMat',
+        style === 'mech' ? bodyColor.scale(0.9) : new BABYLON.Color3(0.86, 0.87, 0.93),
+        opts.emissive, style);
+    head.material = headMat;
+    head._baseColor = headMat.diffuseColor.clone();  // animation.js hit-flash restore
+    head._baseY = head.position.y;                    // animation.js head bob baseline
+    parts.head = head;
+
+    // ---- Eyes ----
+    const eyeZ = (style === 'mech' ? 0.5 : 0.46) * s;
+    const eyeY = 1.6 * s;
+    const eyeGap = 0.28 * s;
+    ['left', 'right'].forEach(side => {
+        const eye = BABYLON.MeshBuilder.CreateSphere(tag + side + 'Eye', {diameter: 0.24 * s, segments: 8}, scene);
+        eye.position = new BABYLON.Vector3((side === 'left' ? -1 : 1) * eyeGap, eyeY, eyeZ);
+        eye.parent = root;
+        eye.material = glowMat;
+        eye._glowColor = eyeColor.clone();  // animation.js keeps per-robot eye colour
+        parts[side + 'Eye'] = eye;
+    });
+
+    if (style === 'mech') {
+        const visor = BABYLON.MeshBuilder.CreateBox(tag + 'Visor',
+            {width: 0.82 * s, height: 0.2 * s, depth: 0.12 * s}, scene);
+        visor.position = new BABYLON.Vector3(0, eyeY, eyeZ - 0.03 * s);
+        visor.parent = root;
+        visor.material = glowMat;
+        const brow = BABYLON.MeshBuilder.CreateBox(tag + 'Brow',
+            {width: 1.06 * s, height: 0.16 * s, depth: 1.02 * s}, scene);
+        brow.position = new BABYLON.Vector3(0, 1.88 * s, 0);
+        brow.parent = root;
+        brow.material = trimMat;
+    } else {
+        [-eyeGap, eyeGap].forEach((x, i) => {
+            const hi = BABYLON.MeshBuilder.CreateSphere(tag + 'EyeHi' + i, {diameter: 0.08 * s, segments: 6}, scene);
+            hi.position = new BABYLON.Vector3(x + 0.05 * s, eyeY + 0.05 * s, eyeZ + 0.09 * s);
+            hi.parent = root;
+            const hiMat = new BABYLON.StandardMaterial(tag + 'EyeHiMat' + i, scene);
+            hiMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+            hi.material = hiMat;
+        });
+    }
+
+    // ---- Mouth grille + antenna (regular robots only) ----
+    if (wantFace) {
+        const mouth = BABYLON.MeshBuilder.CreateBox(tag + 'Mouth',
+            {width: 0.46 * s, height: 0.14 * s, depth: 0.06 * s}, scene);
+        mouth.position = new BABYLON.Vector3(0, 1.32 * s, eyeZ);
+        mouth.parent = root;
+        mouth.material = darkMat;
+        parts.mouth = mouth;
+
+        const antenna = BABYLON.MeshBuilder.CreateCylinder(tag + 'Antenna',
+            {height: 0.5 * s, diameter: 0.08 * s}, scene);
+        antenna.position = new BABYLON.Vector3(style === 'mech' ? 0.32 * s : 0, 2.1 * s,
+            style === 'mech' ? -0.2 * s : 0);
+        antenna.parent = root;
+        antenna.material = trimMat;
+        const tip = BABYLON.MeshBuilder.CreateSphere(tag + 'AntennaTip', {diameter: 0.16 * s, segments: 8}, scene);
+        tip.position = new BABYLON.Vector3(0, 0.3 * s, 0);
+        tip.parent = antenna;
+        tip.material = makeGlowMaterial(scene, tag + 'AntennaTipMat', eyeColor);
+        parts.antenna = antenna;
+    }
+
+    // ---- Chest plate + power core ----
+    const chest = BABYLON.MeshBuilder.CreateBox(tag + 'Chest',
+        {width: 0.92 * s, height: 0.86 * s, depth: 0.16 * s}, scene);
+    chest.position = new BABYLON.Vector3(0, 0.3 * s, 0.42 * s);
+    chest.parent = root;
+    chest.material = trimMat;
+    const core = BABYLON.MeshBuilder.CreateCylinder(tag + 'CoreLight',
+        {height: 0.12 * s, diameter: 0.34 * s, tessellation: 16}, scene);
+    core.rotation.x = Math.PI / 2;
+    core.position = new BABYLON.Vector3(0, 0.32 * s, 0.52 * s);
+    core.parent = root;
+    core.material = coreMat;
+
+    // ---- Shoulder pads ----
+    [-1, 1].forEach(side => {
+        const pad = BABYLON.MeshBuilder.CreateBox(tag + 'Pauldron' + side,
+            {width: 0.5 * s, height: 0.42 * s, depth: 0.62 * s}, scene);
+        pad.position = new BABYLON.Vector3(side * 0.95 * s, 0.72 * s, 0);
+        pad.parent = root;
+        pad.material = style === 'mech' ? trimMat : headMat;
+    });
+
+    // ---- Backpack + exhausts (mech only) ----
+    if (style === 'mech') {
+        const pack = BABYLON.MeshBuilder.CreateBox(tag + 'Pack',
+            {width: 0.7 * s, height: 0.8 * s, depth: 0.3 * s}, scene);
+        pack.position = new BABYLON.Vector3(0, 0.35 * s, -0.5 * s);
+        pack.parent = root;
+        pack.material = trimMat;
+        [-0.2, 0.2].forEach((x, i) => {
+            const ex = BABYLON.MeshBuilder.CreateCylinder(tag + 'Exhaust' + i,
+                {height: 0.3 * s, diameter: 0.16 * s}, scene);
+            ex.position = new BABYLON.Vector3(x * s, 0.78 * s, -0.6 * s);
+            ex.parent = root;
+            ex.material = darkMat;
+        });
+    }
+
+    // ---- Arms ----
+    function makeArm(side, name) {
+        const arm = BABYLON.MeshBuilder.CreateCapsule(name, {radius: 0.2 * s, height: 1.25 * s}, scene);
+        arm.position = new BABYLON.Vector3(side * 1.0 * s, 0.2 * s, 0);
+        arm.parent = root;
+        arm.material = bodyMat;
+        const hand = BABYLON.MeshBuilder.CreateSphere(name + 'Hand', {diameter: 0.34 * s, segments: 8}, scene);
+        hand.position = new BABYLON.Vector3(0, -0.62 * s, 0);
+        hand.parent = arm;
+        hand.material = style === 'mech' ? darkMat : trimMat;
+        if (style === 'mech') {
+            const elbow = BABYLON.MeshBuilder.CreateSphere(name + 'Elbow', {diameter: 0.26 * s, segments: 8}, scene);
+            elbow.parent = arm;
+            elbow.material = trimMat;
+        }
+        return arm;
+    }
+    parts.leftArm = makeArm(-1, tag + 'LeftArm');
+    parts.rightArm = makeArm(1, tag + 'RightArm');
+
+    if (style === 'mech') {
+        const cannon = BABYLON.MeshBuilder.CreateCylinder(tag + 'Cannon', {height: 0.5 * s, diameter: 0.28 * s}, scene);
+        cannon.rotation.x = Math.PI / 2;
+        cannon.position = new BABYLON.Vector3(0, -0.5 * s, 0.3 * s);
+        cannon.parent = parts.rightArm;
+        cannon.material = darkMat;
+    }
+
+    // ---- Legs ----
+    if (wantLegs) {
+        function makeLeg(side, name) {
+            const leg = BABYLON.MeshBuilder.CreateCapsule(name, {radius: 0.23 * s, height: 1.2 * s}, scene);
+            leg.position = new BABYLON.Vector3(side * 0.4 * s, -1.0 * s, 0);
+            leg.parent = root;
+            leg.material = bodyMat;
+            const foot = BABYLON.MeshBuilder.CreateBox(name + 'Foot',
+                {width: 0.6 * s, height: 0.24 * s, depth: 0.86 * s}, scene);
+            foot.position = new BABYLON.Vector3(0, -0.66 * s, 0.16 * s);
+            foot.parent = leg;
+            foot.material = style === 'mech' ? darkMat : trimMat;
+            if (style === 'mech') {
+                const knee = BABYLON.MeshBuilder.CreateSphere(name + 'Knee', {diameter: 0.28 * s, segments: 8}, scene);
+                knee.parent = leg;
+                knee.material = trimMat;
+            }
+            return {leg, foot};
+        }
+        const l = makeLeg(-1, tag + 'LeftLeg');
+        const r = makeLeg(1, tag + 'RightLeg');
+        parts.leftLeg = l.leg;
+        parts.leftFoot = l.foot;
+        parts.rightLeg = r.leg;
+        parts.rightFoot = r.foot;
+    }
+
+    return parts;
+}
+
 // Create level-specific enemy robot
 function createLevelEnemy(scene, enemyType, variantKey) {
     const enemyConfig = ENEMY_TYPES[enemyType];
     if (variantKey === undefined) variantKey = pickEnemyVariant();
     const variant = variantKey ? ENEMY_VARIANTS[variantKey] : null;
 
-    const enemySize = enemyConfig.size * (variant ? variant.sizeMult : 1);
-    const enemy = BABYLON.MeshBuilder.CreateBox("enemy", {size: enemySize}, scene);
+    // Torso is shaped like a chest (cosmetic only - hit detection is distance based)
+    const enemy = BABYLON.MeshBuilder.CreateBox("enemy",
+        {width: 1.55, height: 1.9, depth: 0.9}, scene);
+    if (variant) enemy.scaling.setAll(variant.sizeMult);
 
     const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
     const safePosition = findSafeSpawnPosition(playerPosition);
     enemy.position = safePosition;
 
-    const material = new BABYLON.StandardMaterial("enemyMaterial", scene);
-    material.diffuseColor = variant ? variant.colors.body : enemyConfig.colors.body;
-    material.emissiveColor = variant ? variant.colors.emissive : enemyConfig.colors.emissive;
-    enemy.material = material;
-    
-    // Robot head
-    const head = BABYLON.MeshBuilder.CreateBox("head", {size: 1}, scene);
-    head.position = new BABYLON.Vector3(0, 1.5, 0);
-    head.parent = enemy;
-    
-    const headMaterial = new BABYLON.StandardMaterial("headMaterial", scene);
-    headMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.9);
-    head.material = headMaterial;
-    
-    // Robot eyes (glowing red)
-    const leftEye = BABYLON.MeshBuilder.CreateSphere("leftEye", {diameter: 0.2}, scene);
-    leftEye.position = new BABYLON.Vector3(-0.3, 1.7, 0.4);
-    leftEye.parent = enemy;
-    
-    const rightEye = BABYLON.MeshBuilder.CreateSphere("rightEye", {diameter: 0.2}, scene);
-    rightEye.position = new BABYLON.Vector3(0.3, 1.7, 0.4);
-    rightEye.parent = enemy;
-    
-    const eyeMaterial = new BABYLON.StandardMaterial("eyeMaterial", scene);
-    eyeMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
-    eyeMaterial.emissiveColor = new BABYLON.Color3(1, 0, 0);
-    leftEye.material = eyeMaterial;
-    rightEye.material = eyeMaterial;
-    
-    // Robot mouth/face plate
-    const mouth = BABYLON.MeshBuilder.CreateBox("mouth", {width: 0.4, height: 0.1, depth: 0.05}, scene);
-    mouth.position = new BABYLON.Vector3(0, 1.4, 0.45);
-    mouth.parent = enemy;
-    
-    const mouthMaterial = new BABYLON.StandardMaterial("mouthMaterial", scene);
-    mouthMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.2, 0.2);
-    mouth.material = mouthMaterial;
-    
-    // Robot antenna/sensor
-    const antenna = BABYLON.MeshBuilder.CreateCylinder("antenna", {height: 0.5, diameter: 0.1}, scene);
-    antenna.position = new BABYLON.Vector3(0, 2.2, 0);
-    antenna.parent = enemy;
-    
-    const antennaMaterial = new BABYLON.StandardMaterial("antennaMaterial", scene);
-    antennaMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
-    antennaMaterial.emissiveColor = new BABYLON.Color3(0.5, 0, 0);
-    antenna.material = antennaMaterial;
-    
-    // Robot arms
-    const leftArm = BABYLON.MeshBuilder.CreateBox("leftArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
-    leftArm.position = new BABYLON.Vector3(-1, 0.2, 0);
-    leftArm.parent = enemy;
-    leftArm.material = material;
-    
-    const rightArm = BABYLON.MeshBuilder.CreateBox("rightArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
-    rightArm.position = new BABYLON.Vector3(1, 0.2, 0);
-    rightArm.parent = enemy;
-    rightArm.material = material;
-    
-    // Robot legs
-    const leftLeg = BABYLON.MeshBuilder.CreateBox("leftLeg", {width: 0.4, height: 1.2, depth: 0.4}, scene);
-    leftLeg.position = new BABYLON.Vector3(-0.4, -1, 0);
-    leftLeg.parent = enemy;
-    leftLeg.material = material;
-    
-    const rightLeg = BABYLON.MeshBuilder.CreateBox("rightLeg", {width: 0.4, height: 1.2, depth: 0.4}, scene);
-    rightLeg.position = new BABYLON.Vector3(0.4, -1, 0);
-    rightLeg.parent = enemy;
-    rightLeg.material = material;
-    
-    // Robot feet
-    const leftFoot = BABYLON.MeshBuilder.CreateBox("leftFoot", {width: 0.6, height: 0.2, depth: 0.8}, scene);
-    leftFoot.position = new BABYLON.Vector3(0, -0.7, 0.2);
-    leftFoot.parent = leftLeg;
-    leftFoot.material = material;
-    
-    const rightFoot = BABYLON.MeshBuilder.CreateBox("rightFoot", {width: 0.6, height: 0.2, depth: 0.8}, scene);
-    rightFoot.position = new BABYLON.Vector3(0, -0.7, 0.2);
-    rightFoot.parent = rightLeg;
-    rightFoot.material = material;
-    
-    // Store references to robot parts for animation
-    enemy.robotParts = {
-        head, leftEye, rightEye, mouth, antenna,
-        leftArm, rightArm, leftLeg, rightLeg, 
-        leftFoot, rightFoot
-    };
-    
-    // Robots that emerge at night are tougher, faster and hit harder.
+    // Robots that emerge at night are tougher, faster, hit harder - and look meaner
     const nightF = (typeof getNightFactor === 'function') ? getNightFactor() : 0;
+    const nightborn = nightF > 0.25;
+
+    const style = enemyConfig.style || 'cartoon';
+    const bodyColor = variant ? variant.colors.body : enemyConfig.colors.body;
+    let emissive = variant ? variant.colors.emissive : enemyConfig.colors.emissive;
+    if (nightborn) emissive = emissive.add(new BABYLON.Color3(0.35, 0.05, 0.05));
+    const eyeColor = nightborn
+        ? new BABYLON.Color3(1, 0.15, 0.15)
+        : (style === 'mech' ? new BABYLON.Color3(1, 0.1, 0.05) : new BABYLON.Color3(1, 0.35, 0.1));
+
+    enemy.robotParts = assembleRobot(scene, enemy, {
+        tag: "enemy_" + enemyType,
+        style: style,
+        s: 1,
+        bodyColor: bodyColor,
+        emissive: emissive,
+        eyeColor: eyeColor,
+        coreColor: style === 'mech'
+            ? new BABYLON.Color3(0.2, 0.9, 1)
+            : new BABYLON.Color3(1, 0.85, 0.2),
+        legs: true,
+        face: true
+    });
+
     const healthMult = (variant ? variant.healthMult : 1) * (1 + nightF * 0.7);
     const speedMult = (variant ? variant.speedMult : 1) * (1 + nightF * 0.35);
     const damageMult = 1 + nightF * 0.6;
 
     // Set enemy properties based on level configuration
     enemy.variant = variantKey || null;
-    enemy.nightborn = nightF > 0.25;
+    enemy.nightborn = nightborn;
     enemy.health = enemyConfig.health * healthMult;
     enemy.maxHealth = enemy.health;
     enemy.speed = enemyConfig.speed * speedMult;
@@ -170,12 +347,10 @@ function createLevelEnemy(scene, enemyType, variantKey) {
     enemy.isMoving = false;
     enemy.lastDirection = new BABYLON.Vector3(0, 0, 1);
     
-    // Menacing glow so night-buffed robots read at a glance
-    if (enemy.nightborn) {
-        material.emissiveColor = material.emissiveColor.add(new BABYLON.Color3(0.35, 0.05, 0.05));
-        eyeMaterial.emissiveColor = new BABYLON.Color3(1, 0.15, 0.15);
-        leftEye.scaling.setAll(1.4);
-        rightEye.scaling.setAll(1.4);
+    // Bigger glowing eyes so night-buffed robots read at a glance
+    if (nightborn && enemy.robotParts) {
+        if (enemy.robotParts.leftEye) enemy.robotParts.leftEye.scaling.setAll(1.4);
+        if (enemy.robotParts.rightEye) enemy.robotParts.rightEye.scaling.setAll(1.4);
     }
 
     createHealthBar(scene, enemy);
@@ -189,12 +364,6 @@ function createEnemy(scene) {
 
 // Create level-specific boss with progressive difficulty
 function createLevelBoss(scene, level) {
-    const boss = BABYLON.MeshBuilder.CreateBox("boss", {size: 4 + level}, scene);
-    
-    const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
-    const safePosition = findSafeSpawnPosition(playerPosition);
-    boss.position = safePosition;
-    
     // Boss colors based on level
     const bossColors = {
         1: { body: new BABYLON.Color3(0.8, 0.4, 0.4), emissive: new BABYLON.Color3(0.2, 0.1, 0.1) },
@@ -203,56 +372,27 @@ function createLevelBoss(scene, level) {
         4: { body: new BABYLON.Color3(0.9, 0.2, 0.1), emissive: new BABYLON.Color3(0.4, 0.1, 0.05) },
         5: { body: new BABYLON.Color3(0.9, 0.9, 1), emissive: new BABYLON.Color3(0.4, 0.4, 0.5) }
     };
-    
     const colors = bossColors[level] || bossColors[1];
-    const material = new BABYLON.StandardMaterial("bossMaterial", scene);
-    material.diffuseColor = colors.body;
-    material.emissiveColor = colors.emissive;
-    boss.material = material;
-    
-    // Boss head scaled with level
-    const headSize = 2 + level * 0.5;
-    const head = BABYLON.MeshBuilder.CreateBox("bossHead", {size: headSize}, scene);
-    head.position = new BABYLON.Vector3(0, (4 + level) * 0.75, 0);
-    head.parent = boss;
-    
-    const headMaterial = new BABYLON.StandardMaterial("bossHeadMaterial", scene);
-    headMaterial.diffuseColor = colors.body;
-    head.material = headMaterial;
-    
-    // Giant glowing eyes
-    const eyeSize = 0.4 + level * 0.1;
-    const leftEye = BABYLON.MeshBuilder.CreateSphere("bossLeftEye", {diameter: eyeSize}, scene);
-    leftEye.position = new BABYLON.Vector3(-headSize * 0.3, head.position.y + 0.3, headSize * 0.4);
-    leftEye.parent = boss;
-    
-    const rightEye = BABYLON.MeshBuilder.CreateSphere("bossRightEye", {diameter: eyeSize}, scene);
-    rightEye.position = new BABYLON.Vector3(headSize * 0.3, head.position.y + 0.3, headSize * 0.4);
-    rightEye.parent = boss;
-    
-    const eyeMaterial = new BABYLON.StandardMaterial("bossEyeMaterial", scene);
-    eyeMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
-    eyeMaterial.emissiveColor = new BABYLON.Color3(1, 0, 0);
-    leftEye.material = eyeMaterial;
-    rightEye.material = eyeMaterial;
-    
-    // Arms scaled with level
-    const armSize = 1 + level * 0.2;
-    const leftArm = BABYLON.MeshBuilder.CreateBox("bossLeftArm", {width: armSize, height: armSize * 3, depth: armSize}, scene);
-    leftArm.position = new BABYLON.Vector3(-(2.5 + level * 0.3), 0.6, 0);
-    leftArm.parent = boss;
-    leftArm.material = material;
-    
-    const rightArm = BABYLON.MeshBuilder.CreateBox("bossRightArm", {width: armSize, height: armSize * 3, depth: armSize}, scene);
-    rightArm.position = new BABYLON.Vector3((2.5 + level * 0.3), 0.6, 0);
-    rightArm.parent = boss;
-    rightArm.material = material;
-    
-    // Store references to robot parts for animation
-    boss.robotParts = {
-        head, leftEye, rightEye,
-        leftArm, rightArm
-    };
+
+    const s = (4 + level) / 3;  // scales the whole robot with level
+    const boss = BABYLON.MeshBuilder.CreateBox("boss",
+        {width: 1.7 * s, height: 2.0 * s, depth: 0.95 * s}, scene);
+
+    const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
+    const safePosition = findSafeSpawnPosition(playerPosition);
+    boss.position = safePosition;
+
+    boss.robotParts = assembleRobot(scene, boss, {
+        tag: "lboss" + level,
+        style: 'mech',
+        s: s,
+        bodyColor: colors.body,
+        emissive: colors.emissive,
+        eyeColor: new BABYLON.Color3(1, 0.1, 0.05),
+        coreColor: new BABYLON.Color3(1, 0.3, 0.1),
+        legs: true,
+        face: false
+    });
     
     // Progressive boss stats based on level
     const baseHealth = 200;
@@ -293,63 +433,37 @@ function createLevelBoss(scene, level) {
 
 // Create buddy companion robot
 function createBuddy(scene) {
-    const buddy = BABYLON.MeshBuilder.CreateBox("buddy", {size: 1.8}, scene);
+    const buddy = BABYLON.MeshBuilder.CreateBox("buddy",
+        {width: 1.4, height: 1.7, depth: 0.82}, scene);
     buddy.position = new BABYLON.Vector3(-3, 2, 3);
-    
-    // Friendly blue color scheme
-    const material = new BABYLON.StandardMaterial("buddyMaterial", scene);
-    material.diffuseColor = new BABYLON.Color3(0.2, 0.5, 1);
-    material.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.4);
-    buddy.material = material;
-    
-    // Buddy head
-    const head = BABYLON.MeshBuilder.CreateBox("buddyHead", {size: 0.8}, scene);
-    head.position = new BABYLON.Vector3(0, 1.3, 0);
-    head.parent = buddy;
-    
-    const headMaterial = new BABYLON.StandardMaterial("buddyHeadMaterial", scene);
-    headMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.6, 1);
-    head.material = headMaterial;
-    
-    // Friendly green eyes
-    const leftEye = BABYLON.MeshBuilder.CreateSphere("buddyLeftEye", {diameter: 0.15}, scene);
-    leftEye.position = new BABYLON.Vector3(-0.25, 1.4, 0.35);
-    leftEye.parent = buddy;
-    
-    const rightEye = BABYLON.MeshBuilder.CreateSphere("buddyRightEye", {diameter: 0.15}, scene);
-    rightEye.position = new BABYLON.Vector3(0.25, 1.4, 0.35);
-    rightEye.parent = buddy;
-    
-    const eyeMaterial = new BABYLON.StandardMaterial("buddyEyeMaterial", scene);
-    eyeMaterial.diffuseColor = new BABYLON.Color3(0, 1, 0.2);
-    eyeMaterial.emissiveColor = new BABYLON.Color3(0, 0.8, 0.1);
-    leftEye.material = eyeMaterial;
-    rightEye.material = eyeMaterial;
-    
-    // Buddy arms
-    const leftArm = BABYLON.MeshBuilder.CreateBox("buddyLeftArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
-    leftArm.position = new BABYLON.Vector3(-1, 0, 0);
-    leftArm.parent = buddy;
-    leftArm.material = material;
-    
-    const rightArm = BABYLON.MeshBuilder.CreateBox("buddyRightArm", {width: 0.4, height: 1.2, depth: 0.4}, scene);
-    rightArm.position = new BABYLON.Vector3(1, 0, 0);
-    rightArm.parent = buddy;
-    rightArm.material = material;
-    
-    // Protective shield
+
+    // Friendly chunky companion - cartoon style, no antenna/legs
+    const parts = assembleRobot(scene, buddy, {
+        tag: "buddy",
+        style: 'cartoon',
+        s: 0.9,
+        bodyColor: new BABYLON.Color3(0.2, 0.5, 1),
+        emissive: new BABYLON.Color3(0.1, 0.2, 0.4),
+        eyeColor: new BABYLON.Color3(0.2, 1, 0.4),
+        coreColor: new BABYLON.Color3(0.3, 0.7, 1),
+        legs: false,
+        face: false
+    });
+
+    // Protective shield strapped to the left arm
     const shield = BABYLON.MeshBuilder.CreateCylinder("buddyShield", {height: 0.1, diameter: 1}, scene);
     shield.position = new BABYLON.Vector3(0, 0.5, 0.3);
-    shield.parent = leftArm;
+    shield.parent = parts.leftArm;
     shield.rotation.x = Math.PI / 2;
-    
+
     const shieldMaterial = new BABYLON.StandardMaterial("shieldMaterial", scene);
     shieldMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.9);
     shieldMaterial.specularColor = new BABYLON.Color3(1, 1, 1);
     shield.material = shieldMaterial;
-    
+
     // Store references to buddy parts
-    buddy.robotParts = {head, leftEye, rightEye, leftArm, rightArm, shield};
+    parts.shield = shield;
+    buddy.robotParts = parts;
     
     // Set buddy properties
     buddy.health = 80;
@@ -375,68 +489,25 @@ function createBuddy(scene) {
 
 // Create giant boss enemy
 function createBossEnemy(scene) {
-    const boss = BABYLON.MeshBuilder.CreateBox("boss", {size: 6}, scene);
-    
+    const s = 2.4;
+    const boss = BABYLON.MeshBuilder.CreateBox("boss",
+        {width: 1.7 * s, height: 2.0 * s, depth: 0.95 * s}, scene);
+
     const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
     const safePosition = findSafeSpawnPosition(playerPosition);
     boss.position = safePosition;
-    
-    const material = new BABYLON.StandardMaterial("bossMaterial", scene);
-    material.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2);
-    material.emissiveColor = new BABYLON.Color3(0.3, 0.1, 0.1);
-    boss.material = material;
-    
-    // Giant robot head
-    const head = BABYLON.MeshBuilder.CreateBox("bossHead", {size: 3}, scene);
-    head.position = new BABYLON.Vector3(0, 4.5, 0);
-    head.parent = boss;
-    
-    const headMaterial = new BABYLON.StandardMaterial("bossHeadMaterial", scene);
-    headMaterial.diffuseColor = new BABYLON.Color3(1, 0.1, 0.1);
-    head.material = headMaterial;
-    
-    // Giant glowing red eyes
-    const leftEye = BABYLON.MeshBuilder.CreateSphere("bossLeftEye", {diameter: 0.6}, scene);
-    leftEye.position = new BABYLON.Vector3(-0.9, 5.1, 1.2);
-    leftEye.parent = boss;
-    
-    const rightEye = BABYLON.MeshBuilder.CreateSphere("bossRightEye", {diameter: 0.6}, scene);
-    rightEye.position = new BABYLON.Vector3(0.9, 5.1, 1.2);
-    rightEye.parent = boss;
-    
-    const eyeMaterial = new BABYLON.StandardMaterial("bossEyeMaterial", scene);
-    eyeMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0);
-    eyeMaterial.emissiveColor = new BABYLON.Color3(1, 0, 0);
-    leftEye.material = eyeMaterial;
-    rightEye.material = eyeMaterial;
-    
-    // Giant arms
-    const leftArm = BABYLON.MeshBuilder.CreateBox("bossLeftArm", {width: 1.2, height: 3.6, depth: 1.2}, scene);
-    leftArm.position = new BABYLON.Vector3(-3.75, 0.6, 0);
-    leftArm.parent = boss;
-    leftArm.material = material;
-    
-    const rightArm = BABYLON.MeshBuilder.CreateBox("bossRightArm", {width: 1.2, height: 3.6, depth: 1.2}, scene);
-    rightArm.position = new BABYLON.Vector3(3.75, 0.6, 0);
-    rightArm.parent = boss;
-    rightArm.material = material;
-    
-    // Giant legs
-    const leftLeg = BABYLON.MeshBuilder.CreateBox("bossLeftLeg", {width: 1.2, height: 3.6, depth: 1.2}, scene);
-    leftLeg.position = new BABYLON.Vector3(-1.2, -3, 0);
-    leftLeg.parent = boss;
-    leftLeg.material = material;
-    
-    const rightLeg = BABYLON.MeshBuilder.CreateBox("bossRightLeg", {width: 1.2, height: 3.6, depth: 1.2}, scene);
-    rightLeg.position = new BABYLON.Vector3(1.2, -3, 0);
-    rightLeg.parent = boss;
-    rightLeg.material = material;
-    
-    // Store references to robot parts for animation
-    boss.robotParts = {
-        head, leftEye, rightEye,
-        leftArm, rightArm, leftLeg, rightLeg
-    };
+
+    boss.robotParts = assembleRobot(scene, boss, {
+        tag: "gboss",
+        style: 'mech',
+        s: s,
+        bodyColor: new BABYLON.Color3(1, 0.2, 0.2),
+        emissive: new BABYLON.Color3(0.3, 0.1, 0.1),
+        eyeColor: new BABYLON.Color3(1, 0, 0),
+        coreColor: new BABYLON.Color3(1, 0.2, 0.1),
+        legs: true,
+        face: false
+    });
     
     // Set boss properties
     boss.health = 1000;

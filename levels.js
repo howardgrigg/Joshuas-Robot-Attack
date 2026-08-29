@@ -63,6 +63,7 @@ const LEVEL_CONFIGS = {
 // Enemy type configurations for each level
 const ENEMY_TYPES = {
     scout: {
+        style: 'cartoon',
         health: 50,
         speed: 0.06,
         shootCooldown: 2500,
@@ -75,7 +76,8 @@ const ENEMY_TYPES = {
         abilities: []
     },
     warrior: {
-        health: 90, 
+        style: 'cartoon',
+        health: 90,
         speed: 0.12,
         shootCooldown: 1800,
         attackDamage: 8,
@@ -87,6 +89,7 @@ const ENEMY_TYPES = {
         abilities: ['dodge']
     },
     hunter: {
+        style: 'mech',
         health: 140,
         speed: 0.16, 
         shootCooldown: 1200,
@@ -99,6 +102,7 @@ const ENEMY_TYPES = {
         abilities: ['jump', 'stealth']
     },
     elite: {
+        style: 'mech',
         health: 200,
         speed: 0.20,
         shootCooldown: 1000,
@@ -111,6 +115,7 @@ const ENEMY_TYPES = {
         abilities: ['jump', 'shield', 'fire_resist']
     },
     cyber: {
+        style: 'mech',
         health: 300,
         speed: 0.25,
         shootCooldown: 800,
