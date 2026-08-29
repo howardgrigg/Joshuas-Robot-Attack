@@ -124,6 +124,14 @@ function startGame() {
     }
     gameState.obstacles = [];
     
+    // The engine was created while the canvas was hidden (0x0), so its render
+    // buffer is stuck at the 300x150 default - size it to the visible canvas now.
+    // RENDER_SCALE < 1 renders below CSS resolution and upscales, trading
+    // sharpness for framerate (1 = full CSS res; try 0.85 on slower machines).
+    const RENDER_SCALE = 1.0;
+    engine.setHardwareScalingLevel(1 / RENDER_SCALE);
+    engine.resize();
+
     // Create and initialize the scene
     const { scene, camera } = createScene();
     

@@ -143,7 +143,7 @@ function buildShadows(scene) {
         if (typeof DayNight !== 'object' || !DayNight.sunLight) return;
         const sun = DayNight.sunLight;
 
-        const sg = new BABYLON.ShadowGenerator(2048, sun);
+        const sg = new BABYLON.ShadowGenerator(1024, sun);
         // PCF is far more predictable than ESM for a stylised scene
         sg.usePercentageCloserFiltering = true;
         sg.filteringQuality = BABYLON.ShadowGenerator.QUALITY_MEDIUM;
@@ -172,20 +172,23 @@ function refreshSceneGraphics(scene) {
     if (!map.renderList) map.renderList = [];
 
     map.renderList.length = 0;
-    // Only cast shadows from things near the player: keeps the auto-framed
-    // shadow frustum tight, so shadows stay crisp. Foliage blobs, hills and
-    // dunes are skipped (too many meshes, barely read as shadows).
+    // Only cast shadows from things near the player, and only from each object's
+    // ROOT mesh (a robot's torso box is enough for a readable blob) - adding
+    // every child part put 300+ meshes in the shadow map and tanked the fps.
+    // Multi-part props are the character rigs (parented); single-mesh props
+    // (rocks, trunks, logs, cacti, boxes, coins) cast fine on their own.
     const CASTER = /^(enemy|boss|buddy|rock|trunk|log|cactus|weaponDrop|coin)/;
     const RECEIVER = /^(mainGround|hill|dune|platform|lava)/;
     const cam = Graphics.camera;
-    const RANGE2 = 70 * 70;
+    const RANGE2 = 65 * 65;
+    let added = 0;
 
     for (const m of scene.meshes) {
         if (!m || (m.isDisposed && m.isDisposed())) continue;
-        if (!m.parent && CASTER.test(m.name)) {
+        if (!m.parent && CASTER.test(m.name) && added < 60) {
             const near = !cam ||
                 BABYLON.Vector3.DistanceSquared(m.getAbsolutePosition(), cam.position) < RANGE2;
-            if (near) sg.addShadowCaster(m, true);
+            if (near) { sg.addShadowCaster(m, false); added++; }
         }
         if (RECEIVER.test(m.name)) {
             m.receiveShadows = true;
@@ -272,8 +275,11 @@ function makeDotTexture(scene) {
 
 function _burst(scene, position, opts) {
     if (!Graphics.initialized || !Graphics.dotTexture) return;
+    // Hard cap: never let one-shot effects pile up during a busy fight
+    if (scene.particleSystems && scene.particleSystems.length > 14) return;
     try {
-        const ps = new BABYLON.ParticleSystem(opts.name || "fx", opts.count || 24, scene);
+        const count = opts.count || 20;
+        const ps = new BABYLON.ParticleSystem(opts.name || "fx", count, scene);
         ps.particleTexture = Graphics.dotTexture;
         ps.emitter = position.clone();
         ps.minEmitBox = opts.box ? opts.box.scale(-1) : new BABYLON.Vector3(0, 0, 0);
@@ -290,10 +296,12 @@ function _burst(scene, position, opts) {
         ps.minEmitPower = opts.minPower; ps.maxEmitPower = opts.maxPower;
         ps.updateSpeed = 0.02;
         ps.emitRate = 0;
-        ps.manualEmitCount = opts.count || 24;
+        ps.manualEmitCount = count;
         ps.disposeOnStop = true;
         ps.start();
         ps.stop();
+        // Guaranteed cleanup even if disposeOnStop misses
+        setTimeout(() => { try { ps.dispose(); } catch (e) {} }, (opts.maxLife + 0.4) * 1000);
     } catch (e) { /* effects are optional */ }
 }
 
@@ -324,25 +332,14 @@ function _flashLight(scene, position, color, intensity, steps) {
 
 function spawnDeathExplosion(scene, position) {
     _burst(scene, position, {
-        name: "death", count: 90,
+        name: "death", count: 40,
         box: new BABYLON.Vector3(0.4, 0.4, 0.4),
         color1: new BABYLON.Color4(1, 0.78, 0.25, 1),
         color2: new BABYLON.Color4(1, 0.32, 0.05, 1),
-        minSize: 0.35, maxSize: 1.5, minLife: 0.25, maxLife: 0.75,
+        minSize: 0.4, maxSize: 1.6, minLife: 0.22, maxLife: 0.7,
         gravity: new BABYLON.Vector3(0, -9, 0),
         dir1: new BABYLON.Vector3(-6, 3, -6), dir2: new BABYLON.Vector3(6, 9, 6),
         minPower: 2, maxPower: 7
-    });
-    // Smoke puff
-    _burst(scene, position, {
-        name: "deathSmoke", count: 26,
-        box: new BABYLON.Vector3(0.5, 0.5, 0.5),
-        color1: new BABYLON.Color4(0.25, 0.22, 0.2, 0.6),
-        color2: new BABYLON.Color4(0.12, 0.1, 0.1, 0.5),
-        minSize: 1.2, maxSize: 2.6, minLife: 0.5, maxLife: 1.1,
-        gravity: new BABYLON.Vector3(0, 1.5, 0),
-        dir1: new BABYLON.Vector3(-1.5, 1, -1.5), dir2: new BABYLON.Vector3(1.5, 3, 1.5),
-        minPower: 1, maxPower: 2.5
     });
     _flashLight(scene, position.add(new BABYLON.Vector3(0, 1, 0)),
         new BABYLON.Color3(1, 0.6, 0.2), 6, 7);
@@ -360,10 +357,10 @@ function spawnMuzzleFlash(scene, camera) {
     // No dynamic light here - additive particles + bloom read as a flash and
     // stay clear of the StandardMaterial 4-light limit.
     _burst(scene, pos, {
-        name: "muzzle", count: 12,
+        name: "muzzle", count: 7,
         color1: new BABYLON.Color4(1, 0.9, 0.5, 1),
         color2: new BABYLON.Color4(1, 0.5, 0.12, 1),
-        minSize: 0.15, maxSize: 0.5, minLife: 0.04, maxLife: 0.15,
+        minSize: 0.15, maxSize: 0.5, minLife: 0.04, maxLife: 0.14,
         dir1: fwd.scale(3).add(new BABYLON.Vector3(-1, -1, -1)),
         dir2: fwd.scale(6).add(new BABYLON.Vector3(1, 1, 1)),
         minPower: 1, maxPower: 3
@@ -371,12 +368,16 @@ function spawnMuzzleFlash(scene, camera) {
 }
 
 function spawnHitSparks(scene, position, color) {
+    if (!Graphics.initialized) return;
+    const now = Date.now();
+    if (now - (Graphics._lastSpark || 0) < 40) return; // throttle in busy fights
+    Graphics._lastSpark = now;
     const c = color || new BABYLON.Color3(1, 0.9, 0.35);
     _burst(scene, position, {
-        name: "sparks", count: 22,
+        name: "sparks", count: 12,
         color1: new BABYLON.Color4(c.r, c.g, c.b, 1),
         color2: new BABYLON.Color4(1, 1, 0.75, 1),
-        minSize: 0.1, maxSize: 0.34, minLife: 0.15, maxLife: 0.4,
+        minSize: 0.1, maxSize: 0.34, minLife: 0.14, maxLife: 0.36,
         gravity: new BABYLON.Vector3(0, -12, 0),
         dir1: new BABYLON.Vector3(-4, -1, -4), dir2: new BABYLON.Vector3(4, 6, 4),
         minPower: 2, maxPower: 5
