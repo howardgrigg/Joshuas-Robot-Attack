@@ -1,7 +1,7 @@
-// First-person Weapon Viewmodel
-// A stylised gun parented to the camera so you can see what you're holding.
-// It bobs when you walk, kicks when you shoot, and is rebuilt with a
-// different silhouette + colour to match each weapon's type and flavour.
+// Weapon Models & Viewmodel
+// One gun builder is used three ways: the first-person viewmodel parented to
+// the camera, the physical model robots drop on the ground, and a spinning
+// turntable render used as the HUD / inventory icon.
 
 const Viewmodel = {
     root: null,
@@ -52,54 +52,32 @@ function initViewmodel(scene, camera) {
     Viewmodel.darkMat = d;
 
     Viewmodel.initialized = true;
-    viewmodelSetWeapon(gameState.player.hudWeapons[gameState.player.currentWeapon]);
+    const start = gameState.player.hudWeapons[gameState.player.currentWeapon];
+    viewmodelSetWeapon(start);
+    prewarmWeaponIcon(start);
 }
 
-// --- Build helpers -------------------------------------------------------
+// --- Primitive helpers (scene-parameterised) --------------------------------
 
-function _vmClear() {
-    for (const p of Viewmodel.parts) { try { p.dispose(); } catch (e) {} }
-    Viewmodel.parts = [];
+function _box(sc, name, w, h, dp) {
+    return BABYLON.MeshBuilder.CreateBox(name, { width: w, height: h, depth: dp }, sc);
 }
-
-function _vmAdd(mesh, mat) {
-    mesh.parent = Viewmodel.root;
-    mesh.material = mat;
-    mesh.isPickable = false;
-    mesh.renderingGroupId = 1; // always drawn on top of the world, never clips
-    mesh.applyFog = false;
-    Viewmodel.parts.push(mesh);
-    return mesh;
-}
-
-function _box(name, w, h, dp) {
-    return BABYLON.MeshBuilder.CreateBox(name, { width: w, height: h, depth: dp }, Viewmodel.scene);
-}
-function _cyl(name, dTop, dBot, h) {
+function _cyl(sc, name, dTop, dBot, h) {
     return BABYLON.MeshBuilder.CreateCylinder(name,
-        { diameterTop: dTop, diameterBottom: dBot, height: h, tessellation: 12 }, Viewmodel.scene);
+        { diameterTop: dTop, diameterBottom: dBot, height: h, tessellation: 12 }, sc);
 }
-function _sph(name, dia) {
-    return BABYLON.MeshBuilder.CreateSphere(name, { diameter: dia, segments: 10 }, Viewmodel.scene);
+function _sph(sc, name, dia) {
+    return BABYLON.MeshBuilder.CreateSphere(name, { diameter: dia, segments: 10 }, sc);
 }
-function _tor(name, dia, thick) {
+function _tor(sc, name, dia, thick) {
     return BABYLON.MeshBuilder.CreateTorus(name,
-        { diameter: dia, thickness: thick, tessellation: 16 }, Viewmodel.scene);
+        { diameter: dia, thickness: thick, tessellation: 16 }, sc);
 }
-function _poly(name, ptype, sz) {
-    return BABYLON.MeshBuilder.CreatePolyhedron(name, { type: ptype, size: sz }, Viewmodel.scene);
-}
-
-// A pistol grip most archetypes share
-function _addGrip(back) {
-    const grip = _vmAdd(_box("vmGrip", 0.1, 0.22, 0.12), Viewmodel.bodyMat);
-    grip.position.set(0, -0.17, back);
-    grip.rotation.x = -0.35;
-    const trig = _vmAdd(_box("vmTrig", 0.04, 0.07, 0.03), Viewmodel.metalMat);
-    trig.position.set(0, -0.1, back + 0.09);
+function _poly(sc, name, ptype, sz) {
+    return BABYLON.MeshBuilder.CreatePolyhedron(name, { type: ptype, size: sz }, sc);
 }
 
-// --- Per-weapon look ---------------------------------------------------
+// --- Per-weapon look ------------------------------------------------------
 
 // Map a weapon to an archetype + accent colour, from its name then its config.
 function weaponSpec(name) {
@@ -116,7 +94,6 @@ function weaponSpec(name) {
     const n = (name || '').toLowerCase();
 
     let archetype;
-    // 1. Named silhouettes - the iconic ones get their own shape
     if (/sword|blade/.test(n)) archetype = 'sword';
     else if (/unicorn/.test(n)) archetype = 'horn';
     else if (/black hole|void|gravity|time warp|quantum/.test(n)) archetype = 'orb';
@@ -127,11 +104,9 @@ function weaponSpec(name) {
     else if (/wand|fairy/.test(n)) archetype = 'wand';
     else if (/cyber|code cannon|data stream|robot/.test(n)) archetype = 'cyberpistol';
     else if (/sun beam|light ray|space ripper|sniper/.test(n)) archetype = 'sniper';
-    // 2. Derived from stats
     else if (multi >= 4 || (spread && multi >= 3)) archetype = 'gatling';
     else if (spread) archetype = 'scatter';
     else if (fast && slowFire) archetype = 'sniper';
-    // 3. Fall back to projectile type
     else if (type === 'beam') archetype = 'beam';
     else if (type === 'laser') archetype = 'laser';
     else if (type === 'rocket') archetype = 'cannon';
@@ -141,9 +116,231 @@ function weaponSpec(name) {
     else archetype = 'blaster';
 
     if (poison) { color.r *= 0.6; color.g = Math.min(1, color.g + 0.3); color.b *= 0.5; }
-
     return { archetype, color, size, multi, poison };
 }
+
+// Build the gun parts for `spec` into scene `sc`. `add(mesh, key)` receives each
+// part with a material key: A accent, B body, M metal, D dark. Returns nothing.
+function _assembleGun(sc, spec, add) {
+    const muzzleW = 0.09 + spec.size * 0.12 + (spec.multi > 1 ? 0.06 : 0);
+    const grip = (back) => {
+        const g = add(_box(sc, "g_grip", 0.1, 0.22, 0.12), 'B');
+        g.position.set(0, -0.17, back); g.rotation.x = -0.35;
+        const t = add(_box(sc, "g_trig", 0.04, 0.07, 0.03), 'M');
+        t.position.set(0, -0.1, back + 0.09);
+    };
+
+    switch (spec.archetype) {
+        case 'beam': {
+            const body = add(_box(sc, "g_b", 0.12, 0.13, 0.5), 'B'); body.position.z = 0.02;
+            const rt = add(_box(sc, "g_rt", 0.05, 0.04, 0.44), 'M'); rt.position.set(0, 0.09, 0.04);
+            const rb = add(_box(sc, "g_rb", 0.05, 0.04, 0.44), 'M'); rb.position.set(0, -0.09, 0.04);
+            const em = add(_tor(sc, "g_e", 0.16, 0.05), 'A');
+            em.rotation.x = Math.PI / 2; em.position.set(0, 0, 0.32);
+            const core = add(_cyl(sc, "g_c", 0.05, 0.05, 0.5), 'A');
+            core.rotation.x = Math.PI / 2; core.position.z = 0.05;
+            grip(-0.12); break;
+        }
+        case 'laser': {
+            const body = add(_box(sc, "g_b", 0.1, 0.11, 0.34), 'B'); body.position.z = -0.04;
+            const barrel = add(_cyl(sc, "g_br", 0.04, 0.05, 0.6), 'M');
+            barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.28;
+            const crystal = add(_poly(sc, "g_x", 1, 0.09), 'A'); crystal.position.set(0, 0.01, 0.58);
+            const fin = add(_box(sc, "g_f", 0.02, 0.14, 0.16), 'A'); fin.position.set(0, 0.08, -0.02);
+            grip(-0.1); break;
+        }
+        case 'cannon': {
+            const tube = add(_cyl(sc, "g_t", 0.26 + spec.size * 0.06, 0.24, 0.5), 'B');
+            tube.rotation.x = Math.PI / 2; tube.position.z = 0.16;
+            const back = add(_box(sc, "g_bk", 0.22, 0.22, 0.18), 'D'); back.position.z = -0.14;
+            const ring = add(_tor(sc, "g_rg", 0.3, 0.05), 'A');
+            ring.rotation.x = Math.PI / 2; ring.position.z = 0.4;
+            const tip = add(_sph(sc, "g_tip", 0.18), 'A'); tip.position.z = 0.44; tip.scaling.z = 0.6;
+            const sight = add(_box(sc, "g_s", 0.05, 0.08, 0.1), 'M'); sight.position.set(0, 0.16, -0.05);
+            grip(-0.12); break;
+        }
+        case 'gatling': {
+            const drum = add(_box(sc, "g_dr", 0.24, 0.24, 0.22), 'B'); drum.position.z = -0.05;
+            const back = add(_box(sc, "g_gb", 0.18, 0.18, 0.06), 'D'); back.position.z = -0.19;
+            const hub = add(_cyl(sc, "g_hub", 0.1, 0.1, 0.44), 'M');
+            hub.rotation.x = Math.PI / 2; hub.position.z = 0.26;
+            for (let i = 0; i < 4; i++) {
+                const a = (i / 4) * Math.PI * 2;
+                const bar = add(_cyl(sc, "g_gbar" + i, 0.055, 0.055, 0.46), 'M');
+                bar.rotation.x = Math.PI / 2;
+                bar.position.set(Math.cos(a) * 0.085, Math.sin(a) * 0.085, 0.3);
+            }
+            const ring = add(_tor(sc, "g_gr", 0.26, 0.045), 'A');
+            ring.rotation.x = Math.PI / 2; ring.position.z = 0.46;
+            grip(-0.12); break;
+        }
+        case 'scatter': {
+            const body = add(_box(sc, "g_b", 0.16, 0.15, 0.32), 'B'); body.position.z = -0.02;
+            const flare = add(_cyl(sc, "g_fl", 0.34, 0.12, 0.24), 'A');
+            flare.rotation.x = Math.PI / 2; flare.position.z = 0.28;
+            const under = add(_cyl(sc, "g_un", 0.09, 0.09, 0.22), 'M');
+            under.rotation.x = Math.PI / 2; under.position.set(0, -0.09, 0.2);
+            const pump = add(_box(sc, "g_pu", 0.11, 0.08, 0.14), 'M'); pump.position.set(0, -0.1, 0.06);
+            grip(-0.1); break;
+        }
+        case 'sniper': {
+            const body = add(_box(sc, "g_b", 0.11, 0.12, 0.34), 'B'); body.position.z = -0.06;
+            const barrel = add(_cyl(sc, "g_br", 0.05, 0.055, 0.88), 'M');
+            barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.44;
+            const brake = add(_cyl(sc, "g_bk", 0.1, 0.07, 0.1), 'A');
+            brake.rotation.x = Math.PI / 2; brake.position.z = 0.86;
+            const scope = add(_cyl(sc, "g_sc", 0.09, 0.09, 0.3), 'D');
+            scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.15, 0.04);
+            const lens = add(_cyl(sc, "g_ln", 0.08, 0.08, 0.02), 'A');
+            lens.rotation.x = Math.PI / 2; lens.position.set(0, 0.15, 0.19);
+            const stock = add(_box(sc, "g_st", 0.08, 0.14, 0.22), 'B'); stock.position.z = -0.3;
+            [-1, 1].forEach(s => {
+                const leg = add(_box(sc, "g_lg" + s, 0.02, 0.18, 0.02), 'M');
+                leg.position.set(s * 0.06, -0.12, 0.32); leg.rotation.z = s * 0.35;
+            });
+            grip(-0.12); break;
+        }
+        case 'tesla': {
+            const body = add(_box(sc, "g_b", 0.13, 0.14, 0.4), 'B'); body.position.z = 0;
+            [0.06, 0.2].forEach((z, i) => {
+                const coil = add(_tor(sc, "g_co" + i, 0.17, 0.035), 'A');
+                coil.rotation.x = Math.PI / 2; coil.position.z = z;
+            });
+            [-1, 0, 1].forEach(s => {
+                const prong = add(_box(sc, "g_pr" + s, 0.03, 0.03, 0.26), 'A');
+                prong.position.set(s * 0.06, s === 0 ? 0.04 : 0.0, 0.42);
+                prong.rotation.y = s * 0.32; prong.rotation.x = s === 0 ? -0.15 : 0;
+            });
+            grip(-0.12); break;
+        }
+        case 'wand': {
+            const rod = add(_cyl(sc, "g_rod", 0.04, 0.045, 0.5), 'M');
+            rod.rotation.x = 1.2; rod.position.set(0, -0.02, 0.05);
+            const wrap = add(_cyl(sc, "g_wr", 0.06, 0.06, 0.1), 'B');
+            wrap.rotation.x = 1.2; wrap.position.set(0, -0.13, -0.12);
+            const star = add(_poly(sc, "g_star", 0, 0.08), 'A'); star.position.set(0, 0.16, 0.3);
+            const spark = add(_sph(sc, "g_spk", 0.05), 'A'); spark.position.set(0.07, 0.22, 0.34);
+            break;
+        }
+        case 'gem': {
+            const handle = add(_box(sc, "g_hd", 0.07, 0.16, 0.1), 'B'); handle.position.set(0, -0.05, -0.14);
+            const guard = add(_box(sc, "g_gd", 0.2, 0.05, 0.06), 'M'); guard.position.z = -0.04;
+            const big = add(_poly(sc, "g_big", 2, 0.16), 'A'); big.position.z = 0.2;
+            const s1 = add(_poly(sc, "g_s1", 1, 0.07), 'A'); s1.position.set(0.07, 0.08, 0.08);
+            const s2 = add(_poly(sc, "g_s2", 1, 0.06), 'A'); s2.position.set(-0.06, -0.03, 0.12);
+            break;
+        }
+        case 'orb': {
+            const body = add(_box(sc, "g_b", 0.12, 0.13, 0.24), 'B'); body.position.z = -0.08;
+            [0.12, 0.4].forEach((z, i) => {
+                const ring = add(_tor(sc, "g_or" + i, 0.3, 0.04), 'M');
+                ring.rotation.x = Math.PI / 2; ring.position.z = z;
+            });
+            [0, 1, 2].forEach(i => {
+                const a = (i / 3) * Math.PI * 2;
+                const strut = add(_box(sc, "g_str" + i, 0.02, 0.02, 0.3), 'M');
+                strut.position.set(Math.cos(a) * 0.14, Math.sin(a) * 0.14, 0.26);
+            });
+            const core = add(_sph(sc, "g_core", 0.2), 'A'); core.position.z = 0.26;
+            grip(-0.1); break;
+        }
+        case 'maw': {
+            const body = add(_box(sc, "g_b", 0.15, 0.16, 0.36), 'B'); body.position.z = -0.02;
+            const jt = add(_cyl(sc, "g_jt", 0.24, 0.06, 0.22), 'D');
+            jt.rotation.x = Math.PI / 2 - 0.22; jt.position.set(0, 0.06, 0.3);
+            const jb = add(_cyl(sc, "g_jb", 0.24, 0.06, 0.22), 'D');
+            jb.rotation.x = Math.PI / 2 + 0.22; jb.position.set(0, -0.06, 0.3);
+            const throat = add(_sph(sc, "g_th", 0.15), 'A'); throat.position.z = 0.28;
+            [-1, 1].forEach(s => {
+                const horn = add(_cyl(sc, "g_hn" + s, 0.0, 0.05, 0.16), 'M');
+                horn.position.set(s * 0.08, 0.12, 0.06); horn.rotation.x = -0.4;
+            });
+            grip(-0.12); break;
+        }
+        case 'cyberpistol': {
+            const body = add(_box(sc, "g_b", 0.13, 0.16, 0.34), 'B'); body.position.z = 0;
+            const top = add(_box(sc, "g_tp", 0.1, 0.05, 0.22), 'M'); top.position.set(0, 0.1, 0.03);
+            const barrel = add(_box(sc, "g_br", 0.06, 0.06, 0.3), 'M'); barrel.position.z = 0.3;
+            const muzzle = add(_box(sc, "g_mz", 0.09, 0.09, 0.06), 'A'); muzzle.position.z = 0.46;
+            const screen = add(_box(sc, "g_scr", 0.02, 0.09, 0.13), 'A'); screen.position.set(0.075, 0.0, -0.02);
+            const ant = add(_cyl(sc, "g_ant", 0.018, 0.018, 0.16), 'M'); ant.position.set(-0.04, 0.18, -0.12);
+            const at = add(_sph(sc, "g_at", 0.035), 'A'); at.position.set(-0.04, 0.27, -0.12);
+            grip(-0.12); break;
+        }
+        case 'sonic': {
+            const body = add(_box(sc, "g_b", 0.14, 0.15, 0.28), 'B'); body.position.z = -0.04;
+            const co = add(_cyl(sc, "g_cn", 0.36, 0.1, 0.26), 'B');
+            co.rotation.x = Math.PI / 2; co.position.z = 0.3;
+            const ci = add(_cyl(sc, "g_ci", 0.28, 0.06, 0.2), 'A');
+            ci.rotation.x = Math.PI / 2; ci.position.z = 0.3;
+            [-1, 1].forEach(s => {
+                const vent = add(_box(sc, "g_vt" + s, 0.04, 0.1, 0.14), 'M');
+                vent.position.set(s * 0.09, 0, 0);
+            });
+            grip(-0.1); break;
+        }
+        case 'bow': {
+            const riser = add(_box(sc, "g_ri", 0.06, 0.34, 0.08), 'B'); riser.position.z = 0.0;
+            [-1, 1].forEach(s => {
+                const limb = add(_box(sc, "g_lm" + s, 0.04, 0.24, 0.05), 'M');
+                limb.position.set(0, s * 0.26, 0.02); limb.rotation.x = s * -0.5;
+            });
+            const bolt = add(_cyl(sc, "g_bo", 0.02, 0.03, 0.5), 'A');
+            bolt.rotation.x = Math.PI / 2; bolt.position.z = 0.2;
+            const bt = add(_cyl(sc, "g_bt", 0.0, 0.06, 0.1), 'A');
+            bt.rotation.x = Math.PI / 2; bt.position.z = 0.46;
+            grip(-0.1); break;
+        }
+        case 'elemental': {
+            const body = add(_box(sc, "g_b", 0.14, 0.15, 0.4), 'B'); body.position.z = 0.0;
+            const tank = add(_cyl(sc, "g_tk", 0.13, 0.13, 0.3), 'A');
+            tank.rotation.z = Math.PI / 2; tank.position.set(0, 0.13, -0.02);
+            const hose = add(_cyl(sc, "g_h", 0.03, 0.03, 0.18), 'D');
+            hose.rotation.x = 0.5; hose.position.set(0.02, 0.06, 0.12);
+            const nozzle = add(_cyl(sc, "g_n", muzzleW + 0.04, 0.08, 0.14), 'A');
+            nozzle.rotation.x = Math.PI / 2; nozzle.position.set(0, 0, 0.3);
+            grip(-0.1); break;
+        }
+        case 'staff': {
+            const shaft = add(_cyl(sc, "g_sh", 0.045, 0.05, 0.95), 'M');
+            shaft.rotation.x = 1.15; shaft.position.set(0, -0.02, 0.06);
+            const wrap = add(_cyl(sc, "g_w", 0.07, 0.07, 0.14), 'B');
+            wrap.rotation.x = 1.15; wrap.position.set(0, -0.08, -0.08);
+            const orb = add(_sph(sc, "g_o", 0.17 + spec.size * 0.06), 'A'); orb.position.set(0, 0.24, 0.42);
+            const claw = add(_tor(sc, "g_cl", 0.22, 0.03), 'M');
+            claw.rotation.x = Math.PI / 2 + 0.3; claw.position.set(0, 0.22, 0.42);
+            break;
+        }
+        case 'horn': {
+            const shaft = add(_cyl(sc, "g_sh", 0.045, 0.05, 0.9), 'M');
+            shaft.rotation.x = 1.15; shaft.position.set(0, -0.02, 0.06);
+            const spiral = add(_cyl(sc, "g_hn", 0.0, 0.13, 0.5), 'A');
+            spiral.rotation.x = -0.45; spiral.position.set(0, 0.26, 0.5);
+            break;
+        }
+        case 'sword': {
+            const hilt = add(_box(sc, "g_hl", 0.07, 0.07, 0.22), 'B'); hilt.position.z = -0.16;
+            const guard = add(_box(sc, "g_gd", 0.26, 0.06, 0.06), 'M'); guard.position.z = -0.02;
+            const blade = add(_box(sc, "g_bl", 0.05, 0.12, 0.85), 'A'); blade.position.z = 0.42;
+            const bt = add(_cyl(sc, "g_bt", 0.0, 0.13, 0.16), 'A');
+            bt.rotation.x = Math.PI / 2; bt.position.z = 0.9;
+            break;
+        }
+        default: { // blaster
+            const rec = add(_box(sc, "g_r", 0.15, 0.17, 0.44), 'B'); rec.position.z = 0.0;
+            const barrel = add(_cyl(sc, "g_br", 0.075, 0.08, 0.42), 'M');
+            barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.02, 0.36);
+            const muzzle = add(_cyl(sc, "g_mz", muzzleW + 0.04, muzzleW, 0.08), 'A');
+            muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0, 0.02, 0.58);
+            const strip = add(_box(sc, "g_sp", 0.165, 0.05, 0.26), 'A'); strip.position.set(0, -0.02, 0.0);
+            const rail = add(_box(sc, "g_rl", 0.05, 0.045, 0.3), 'M'); rail.position.set(0, 0.11, 0.02);
+            const sight = add(_box(sc, "g_s", 0.04, 0.06, 0.04), 'M'); sight.position.set(0, 0.16, -0.08);
+            grip(-0.12);
+        }
+    }
+}
+
+// --- Viewmodel (camera-parented) --------------------------------------
 
 function viewmodelSetWeapon(weaponName) {
     if (!Viewmodel.initialized || !weaponName) return;
@@ -156,243 +353,20 @@ function viewmodelSetWeapon(weaponName) {
     acc.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
     Viewmodel.accentMat = acc;
 
-    _vmClear();
-    const A = Viewmodel.accentMat, B = Viewmodel.bodyMat, M = Viewmodel.metalMat, D = Viewmodel.darkMat;
-    const muzzleW = 0.09 + spec.size * 0.12 + (spec.multi > 1 ? 0.06 : 0);
+    for (const p of Viewmodel.parts) { try { p.dispose(); } catch (e) {} }
+    Viewmodel.parts = [];
 
-    switch (spec.archetype) {
-        case 'beam': {
-            const body = _vmAdd(_box("vmB", 0.12, 0.13, 0.5), B); body.position.z = 0.02;
-            const railT = _vmAdd(_box("vmRT", 0.05, 0.04, 0.44), M); railT.position.set(0, 0.09, 0.04);
-            const railB = _vmAdd(_box("vmRB", 0.05, 0.04, 0.44), M); railB.position.set(0, -0.09, 0.04);
-            const emitter = _vmAdd(BABYLON.MeshBuilder.CreateTorus("vmE",
-                { diameter: 0.16, thickness: 0.05, tessellation: 16 }, Viewmodel.scene), A);
-            emitter.rotation.x = Math.PI / 2; emitter.position.set(0, 0, 0.32);
-            const core = _vmAdd(_cyl("vmC", 0.05, 0.05, 0.5), A); core.rotation.x = Math.PI / 2; core.position.z = 0.05;
-            _addGrip(-0.12);
-            break;
-        }
-        case 'laser': {
-            const body = _vmAdd(_box("vmB", 0.1, 0.11, 0.34), B); body.position.z = -0.04;
-            const barrel = _vmAdd(_cyl("vmBr", 0.04, 0.05, 0.6), M);
-            barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.28;
-            const crystal = _vmAdd(BABYLON.MeshBuilder.CreatePolyhedron("vmX",
-                { type: 1, size: 0.09 }, Viewmodel.scene), A);
-            crystal.position.set(0, 0.01, 0.58);
-            const fin = _vmAdd(_box("vmF", 0.02, 0.14, 0.16), A); fin.position.set(0, 0.08, -0.02);
-            _addGrip(-0.1);
-            break;
-        }
-        case 'cannon': {
-            const tube = _vmAdd(_cyl("vmT", 0.26 + spec.size * 0.06, 0.24, 0.5), B);
-            tube.rotation.x = Math.PI / 2; tube.position.z = 0.16;
-            const back = _vmAdd(_box("vmBk", 0.22, 0.22, 0.18), D); back.position.z = -0.14;
-            const ring = _vmAdd(_tor("vmRg", 0.3, 0.05), A);
-            ring.rotation.x = Math.PI / 2; ring.position.z = 0.4;
-            const tip = _vmAdd(_sph("vmTip", 0.18), A);
-            tip.position.z = 0.44; tip.scaling.z = 0.6;
-            const sight = _vmAdd(_box("vmS", 0.05, 0.08, 0.1), M); sight.position.set(0, 0.16, -0.05);
-            _addGrip(-0.12);
-            break;
-        }
-        case 'gatling': {
-            const drum = _vmAdd(_box("vmDr", 0.24, 0.24, 0.22), B); drum.position.z = -0.05;
-            const back = _vmAdd(_box("vmGb", 0.18, 0.18, 0.06), D); back.position.z = -0.19;
-            const hub = _vmAdd(_cyl("vmHub", 0.1, 0.1, 0.44), M);
-            hub.rotation.x = Math.PI / 2; hub.position.z = 0.26;
-            for (let i = 0; i < 4; i++) {
-                const a = (i / 4) * Math.PI * 2;
-                const bar = _vmAdd(_cyl("vmGB" + i, 0.055, 0.055, 0.46), M);
-                bar.rotation.x = Math.PI / 2;
-                bar.position.set(Math.cos(a) * 0.085, Math.sin(a) * 0.085, 0.3);
-            }
-            const ring = _vmAdd(_tor("vmGR", 0.26, 0.045), A);
-            ring.rotation.x = Math.PI / 2; ring.position.z = 0.46;
-            _addGrip(-0.12);
-            break;
-        }
-        case 'scatter': {
-            const body = _vmAdd(_box("vmB", 0.16, 0.15, 0.32), B); body.position.z = -0.02;
-            const flare = _vmAdd(_cyl("vmFl", 0.34, 0.12, 0.24), A);
-            flare.rotation.x = Math.PI / 2; flare.position.z = 0.28;
-            const under = _vmAdd(_cyl("vmUn", 0.09, 0.09, 0.22), M);
-            under.rotation.x = Math.PI / 2; under.position.set(0, -0.09, 0.2);
-            const pump = _vmAdd(_box("vmPu", 0.11, 0.08, 0.14), M); pump.position.set(0, -0.1, 0.06);
-            _addGrip(-0.1);
-            break;
-        }
-        case 'sniper': {
-            const body = _vmAdd(_box("vmB", 0.11, 0.12, 0.34), B); body.position.z = -0.06;
-            const barrel = _vmAdd(_cyl("vmBr", 0.05, 0.055, 0.88), M);
-            barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.44;
-            const brake = _vmAdd(_cyl("vmBk", 0.1, 0.07, 0.1), A);
-            brake.rotation.x = Math.PI / 2; brake.position.z = 0.86;
-            const scope = _vmAdd(_cyl("vmSc", 0.09, 0.09, 0.3), D);
-            scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.15, 0.04);
-            const lens = _vmAdd(_cyl("vmLn", 0.08, 0.08, 0.02), A);
-            lens.rotation.x = Math.PI / 2; lens.position.set(0, 0.15, 0.19);
-            const stock = _vmAdd(_box("vmSt", 0.08, 0.14, 0.22), B); stock.position.z = -0.3;
-            [-1, 1].forEach(s => {
-                const leg = _vmAdd(_box("vmLg" + s, 0.02, 0.18, 0.02), M);
-                leg.position.set(s * 0.06, -0.12, 0.32); leg.rotation.z = s * 0.35;
-            });
-            _addGrip(-0.12);
-            break;
-        }
-        case 'tesla': {
-            const body = _vmAdd(_box("vmB", 0.13, 0.14, 0.4), B); body.position.z = 0;
-            [0.06, 0.2].forEach((z, i) => {
-                const coil = _vmAdd(_tor("vmCo" + i, 0.17, 0.035), A);
-                coil.rotation.x = Math.PI / 2; coil.position.z = z;
-            });
-            [-1, 0, 1].forEach(s => {
-                const prong = _vmAdd(_box("vmPr" + s, 0.03, 0.03, 0.26), A);
-                prong.position.set(s * 0.06, s === 0 ? 0.04 : 0.0, 0.42);
-                prong.rotation.y = s * 0.32;
-                prong.rotation.x = s === 0 ? -0.15 : 0;
-            });
-            _addGrip(-0.12);
-            break;
-        }
-        case 'wand': {
-            const rod = _vmAdd(_cyl("vmRod", 0.04, 0.045, 0.5), M);
-            rod.rotation.x = 1.2; rod.position.set(0, -0.02, 0.05);
-            const wrap = _vmAdd(_cyl("vmWr", 0.06, 0.06, 0.1), B);
-            wrap.rotation.x = 1.2; wrap.position.set(0, -0.13, -0.12);
-            const star = _vmAdd(_poly("vmStar", 0, 0.08), A);
-            star.position.set(0, 0.16, 0.3);
-            const spark = _vmAdd(_sph("vmSpk", 0.05), A);
-            spark.position.set(0.07, 0.22, 0.34);
-            break;
-        }
-        case 'gem': {
-            const handle = _vmAdd(_box("vmHd", 0.07, 0.16, 0.1), B); handle.position.set(0, -0.05, -0.14);
-            const guard = _vmAdd(_box("vmGd", 0.2, 0.05, 0.06), M); guard.position.z = -0.04;
-            const big = _vmAdd(_poly("vmBig", 2, 0.16), A); big.position.z = 0.2;
-            const s1 = _vmAdd(_poly("vmS1", 1, 0.07), A); s1.position.set(0.07, 0.08, 0.08);
-            const s2 = _vmAdd(_poly("vmS2", 1, 0.06), A); s2.position.set(-0.06, -0.03, 0.12);
-            break;
-        }
-        case 'orb': {
-            const body = _vmAdd(_box("vmB", 0.12, 0.13, 0.24), B); body.position.z = -0.08;
-            [0.12, 0.4].forEach((z, i) => {
-                const ring = _vmAdd(_tor("vmOr" + i, 0.3, 0.04), M);
-                ring.rotation.x = Math.PI / 2; ring.position.z = z;
-            });
-            [0, 1, 2].forEach(i => {
-                const a = (i / 3) * Math.PI * 2;
-                const strut = _vmAdd(_box("vmSt" + i, 0.02, 0.02, 0.3), M);
-                strut.position.set(Math.cos(a) * 0.14, Math.sin(a) * 0.14, 0.26);
-            });
-            const core = _vmAdd(_sph("vmCore", 0.2), A); core.position.z = 0.26;
-            _addGrip(-0.1);
-            break;
-        }
-        case 'maw': {
-            const body = _vmAdd(_box("vmB", 0.15, 0.16, 0.36), B); body.position.z = -0.02;
-            const jawT = _vmAdd(_cyl("vmJT", 0.24, 0.06, 0.22), D);
-            jawT.rotation.x = Math.PI / 2 - 0.22; jawT.position.set(0, 0.06, 0.3);
-            const jawB = _vmAdd(_cyl("vmJB", 0.24, 0.06, 0.22), D);
-            jawB.rotation.x = Math.PI / 2 + 0.22; jawB.position.set(0, -0.06, 0.3);
-            const throat = _vmAdd(_sph("vmTh", 0.15), A); throat.position.z = 0.28;
-            [-1, 1].forEach(s => {
-                const horn = _vmAdd(_cyl("vmHn" + s, 0.0, 0.05, 0.16), M);
-                horn.position.set(s * 0.08, 0.12, 0.06); horn.rotation.x = -0.4;
-            });
-            _addGrip(-0.12);
-            break;
-        }
-        case 'cyberpistol': {
-            const body = _vmAdd(_box("vmB", 0.13, 0.16, 0.34), B); body.position.z = 0;
-            const top = _vmAdd(_box("vmTp", 0.1, 0.05, 0.22), M); top.position.set(0, 0.1, 0.03);
-            const barrel = _vmAdd(_box("vmBr", 0.06, 0.06, 0.3), M); barrel.position.z = 0.3;
-            const muzzle = _vmAdd(_box("vmMz", 0.09, 0.09, 0.06), A); muzzle.position.z = 0.46;
-            const screen = _vmAdd(_box("vmScr", 0.02, 0.09, 0.13), A); screen.position.set(0.075, 0.0, -0.02);
-            const ant = _vmAdd(_cyl("vmAnt", 0.018, 0.018, 0.16), M);
-            ant.position.set(-0.04, 0.18, -0.12);
-            const antTip = _vmAdd(_sph("vmAT", 0.035), A); antTip.position.set(-0.04, 0.27, -0.12);
-            _addGrip(-0.12);
-            break;
-        }
-        case 'sonic': {
-            const body = _vmAdd(_box("vmB", 0.14, 0.15, 0.28), B); body.position.z = -0.04;
-            const coneOut = _vmAdd(_cyl("vmCn", 0.36, 0.1, 0.26), B);
-            coneOut.rotation.x = Math.PI / 2; coneOut.position.z = 0.3;
-            const coneIn = _vmAdd(_cyl("vmCi", 0.28, 0.06, 0.2), A);
-            coneIn.rotation.x = Math.PI / 2; coneIn.position.z = 0.3;
-            [-1, 1].forEach(s => {
-                const vent = _vmAdd(_box("vmVt" + s, 0.04, 0.1, 0.14), M);
-                vent.position.set(s * 0.09, 0, 0);
-            });
-            _addGrip(-0.1);
-            break;
-        }
-        case 'bow': {
-            const riser = _vmAdd(_box("vmRi", 0.06, 0.34, 0.08), B); riser.position.z = 0.0;
-            [-1, 1].forEach(s => {
-                const limb = _vmAdd(_box("vmLm" + s, 0.04, 0.24, 0.05), M);
-                limb.position.set(0, s * 0.26, 0.02); limb.rotation.x = s * -0.5;
-            });
-            const bolt = _vmAdd(_cyl("vmBo", 0.02, 0.03, 0.5), A);
-            bolt.rotation.x = Math.PI / 2; bolt.position.z = 0.2;
-            const tip = _vmAdd(_cyl("vmBt", 0.0, 0.06, 0.1), A);
-            tip.rotation.x = Math.PI / 2; tip.position.z = 0.46;
-            _addGrip(-0.1);
-            break;
-        }
-        case 'elemental': {
-            const body = _vmAdd(_box("vmB", 0.14, 0.15, 0.4), B); body.position.z = 0.0;
-            const tank = _vmAdd(_cyl("vmTk", 0.13, 0.13, 0.3), A);
-            tank.rotation.z = Math.PI / 2; tank.position.set(0, 0.13, -0.02);
-            const hose = _vmAdd(_cyl("vmH", 0.03, 0.03, 0.18), D);
-            hose.rotation.x = 0.5; hose.position.set(0.02, 0.06, 0.12);
-            const nozzle = _vmAdd(_cyl("vmN", muzzleW + 0.04, 0.08, 0.14), A);
-            nozzle.rotation.x = Math.PI / 2; nozzle.position.set(0, 0, 0.3);
-            _addGrip(-0.1);
-            break;
-        }
-        case 'staff': {
-            const shaft = _vmAdd(_cyl("vmSh", 0.045, 0.05, 0.95), M);
-            shaft.rotation.x = 1.15; shaft.position.set(0, -0.02, 0.06);
-            const wrap = _vmAdd(_cyl("vmW", 0.07, 0.07, 0.14), B);
-            wrap.rotation.x = 1.15; wrap.position.set(0, -0.08, -0.08);
-            const orb = _vmAdd(_sph("vmO", 0.17 + spec.size * 0.06), A);
-            orb.position.set(0, 0.24, 0.42);
-            const claw = _vmAdd(BABYLON.MeshBuilder.CreateTorus("vmCl",
-                { diameter: 0.22, thickness: 0.03, tessellation: 12 }, Viewmodel.scene), M);
-            claw.rotation.x = Math.PI / 2 + 0.3; claw.position.set(0, 0.22, 0.42);
-            break;
-        }
-        case 'horn': {
-            const shaft = _vmAdd(_cyl("vmSh", 0.045, 0.05, 0.9), M);
-            shaft.rotation.x = 1.15; shaft.position.set(0, -0.02, 0.06);
-            const spiral = _vmAdd(_cyl("vmHn", 0.0, 0.13, 0.5), A);
-            spiral.rotation.x = -0.45; spiral.position.set(0, 0.26, 0.5);
-            break;
-        }
-        case 'sword': {
-            const hilt = _vmAdd(_box("vmHl", 0.07, 0.07, 0.22), B); hilt.position.z = -0.16;
-            const guard = _vmAdd(_box("vmGd", 0.26, 0.06, 0.06), M); guard.position.z = -0.02;
-            const blade = _vmAdd(_box("vmBl", 0.05, 0.12, 0.85), A); blade.position.z = 0.42;
-            const tipB = _vmAdd(_cyl("vmBt", 0.0, 0.13, 0.16), A);
-            tipB.rotation.x = Math.PI / 2; tipB.position.z = 0.9;
-            break;
-        }
-        default: { // blaster
-            const rec = _vmAdd(_box("vmR", 0.15, 0.17, 0.44), B); rec.position.z = 0.0;
-            const barrel = _vmAdd(_cyl("vmBr", 0.075, 0.08, 0.42), M);
-            barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.02, 0.36);
-            const muzzle = _vmAdd(_cyl("vmMz", muzzleW + 0.04, muzzleW, 0.08), A);
-            muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0, 0.02, 0.58);
-            const strip = _vmAdd(_box("vmSt", 0.165, 0.05, 0.26), A); strip.position.set(0, -0.02, 0.0);
-            const rail = _vmAdd(_box("vmRl", 0.05, 0.045, 0.3), M); rail.position.set(0, 0.11, 0.02);
-            const sight = _vmAdd(_box("vmS", 0.04, 0.06, 0.04), M); sight.position.set(0, 0.16, -0.08);
-            _addGrip(-0.12);
-        }
-    }
+    const mats = { A: acc, B: Viewmodel.bodyMat, M: Viewmodel.metalMat, D: Viewmodel.darkMat };
+    _assembleGun(Viewmodel.scene, spec, (mesh, key) => {
+        mesh.parent = Viewmodel.root;
+        mesh.material = mats[key];
+        mesh.isPickable = false;
+        mesh.renderingGroupId = 1;   // always drawn on top of the world
+        mesh.applyFog = false;
+        Viewmodel.parts.push(mesh);
+        return mesh;
+    });
 }
-
-// --- Runtime -------------------------------------------------------------
 
 function viewmodelRecoil() {
     if (!Viewmodel.initialized) return;
@@ -406,10 +380,10 @@ function updateViewmodel(camera, moving) {
     Viewmodel.phase += moving ? 0.28 : 0.05;
     const p = Viewmodel.phase;
 
-    const targetX = moving ? Math.sin(p) * 0.016 : Math.sin(p) * 0.004;
-    const targetY = moving ? -Math.abs(Math.sin(p)) * 0.022 : Math.sin(p * 0.6) * 0.004;
-    Viewmodel.bob.x += (targetX - Viewmodel.bob.x) * 0.15;
-    Viewmodel.bob.y += (targetY - Viewmodel.bob.y) * 0.15;
+    const tx = moving ? Math.sin(p) * 0.016 : Math.sin(p) * 0.004;
+    const ty = moving ? -Math.abs(Math.sin(p)) * 0.022 : Math.sin(p * 0.6) * 0.004;
+    Viewmodel.bob.x += (tx - Viewmodel.bob.x) * 0.15;
+    Viewmodel.bob.y += (ty - Viewmodel.bob.y) * 0.15;
 
     const kick = Viewmodel.recoil;
     Viewmodel.recoil *= 0.80;
@@ -425,4 +399,170 @@ function updateViewmodel(camera, moving) {
         Viewmodel.restRot.y,
         Viewmodel.restRot.z + Math.sin(p * 2) * (moving ? 0.01 : 0.003)
     );
+}
+
+// --- Standalone gun model (world drops, turntable) ---------------------
+
+function _newGunMats(sc, color) {
+    const B = new BABYLON.StandardMaterial("gmBody", sc);
+    B.diffuseColor = new BABYLON.Color3(0.18, 0.19, 0.22);
+    B.specularColor = new BABYLON.Color3(0.3, 0.3, 0.35);
+    B.emissiveColor = new BABYLON.Color3(0.04, 0.04, 0.05);
+    const M = new BABYLON.StandardMaterial("gmMetal", sc);
+    M.diffuseColor = new BABYLON.Color3(0.35, 0.37, 0.42);
+    M.specularColor = new BABYLON.Color3(0.9, 0.9, 1.0); M.specularPower = 64;
+    const D = new BABYLON.StandardMaterial("gmDark", sc);
+    D.diffuseColor = new BABYLON.Color3(0.09, 0.09, 0.1);
+    const A = new BABYLON.StandardMaterial("gmAccent", sc);
+    A.diffuseColor = color.clone();
+    A.emissiveColor = color.scale(0.4);
+    return { A, B, M, D, _all: [A, B, M, D] };
+}
+
+// Returns a TransformNode with the gun built under it. opts.renderingGroupId
+// optionally forces a rendering group on every part.
+function createWeaponModel(scene, name, opts) {
+    opts = opts || {};
+    const spec = weaponSpec(name);
+    const root = new BABYLON.TransformNode("weaponModel", scene);
+    const mats = _newGunMats(scene, spec.color);
+    root._gunMats = mats;
+    _assembleGun(scene, spec, (mesh, key) => {
+        mesh.parent = root;
+        mesh.material = mats[key];
+        mesh.isPickable = false;
+        if (opts.renderingGroupId != null) mesh.renderingGroupId = opts.renderingGroupId;
+        return mesh;
+    });
+    return root;
+}
+
+function disposeWeaponModel(node) {
+    if (!node) return;
+    const m = node._gunMats;
+    if (m) m._all.forEach(x => { try { x.dispose(); } catch (e) {} });
+    try { node.dispose(); } catch (e) {}
+}
+
+// --- Turntable icon (HUD / inventory) --------------------------------
+//
+// Each weapon's gun model is rendered spinning through 16 frames into one
+// horizontal sprite sheet (a data URL). The HUD / inventory show it as a
+// CSS-stepped background, which reads as a rotating 3D model.
+//
+// Rendering uses a throwaway offscreen WebGL context. It's async (waits for
+// shader compilation) and serialised so only one context is ever alive.
+
+const _iconCache = {};   // name -> {url,frames} | Promise<{url,frames}> | null
+let _ttQueue = Promise.resolve();
+
+const _TT_FRAMES = 12, _TT_SIZE = 76;
+
+// One persistent offscreen WebGL context is reused for every turntable render.
+// (Creating/disposing an Engine per weapon leaks GL contexts and tanks the fps.)
+let _ttEngine = null, _ttScene = null, _ttOff = null;
+
+function _ensureTTScene() {
+    if (_ttScene) return;
+    _ttOff = document.createElement('canvas');
+    _ttOff.width = _TT_SIZE; _ttOff.height = _TT_SIZE;
+    _ttEngine = new BABYLON.Engine(_ttOff, true,
+        { preserveDrawingBuffer: true, alpha: true }, false);
+    _ttScene = new BABYLON.Scene(_ttEngine);
+    _ttScene.clearColor = new BABYLON.Color4(0, 0, 0, 0);
+
+    const cam = new BABYLON.ArcRotateCamera("ic",
+        -Math.PI / 2 + 0.5, Math.PI / 2 - 0.38, 1.35,
+        new BABYLON.Vector3(0, 0.02, 0.16), _ttScene);
+    cam.fov = 0.9;
+    _ttScene.activeCamera = cam;
+
+    const hemi = new BABYLON.HemisphericLight("ih", new BABYLON.Vector3(0.4, 1, 0.35), _ttScene);
+    hemi.intensity = 1.25; hemi.groundColor = new BABYLON.Color3(0.4, 0.4, 0.48);
+    const dir = new BABYLON.DirectionalLight("id", new BABYLON.Vector3(-0.5, -0.8, 0.4), _ttScene);
+    dir.intensity = 1.0;
+}
+
+async function _renderTurntable(name) {
+    _ensureTTScene();
+    const model = createWeaponModel(_ttScene, name, { renderingGroupId: 0 });
+    try {
+        await _ttScene.whenReadyAsync();  // wait for shaders / meshes
+
+        const sheet = document.createElement('canvas');
+        sheet.width = _TT_SIZE * _TT_FRAMES; sheet.height = _TT_SIZE;
+        const sctx = sheet.getContext('2d');
+        for (let i = 0; i < _TT_FRAMES; i++) {
+            model.rotation.y = (i / _TT_FRAMES) * Math.PI * 2;
+            _ttScene.render();
+            sctx.drawImage(_ttOff, i * _TT_SIZE, 0);
+        }
+        return { url: sheet.toDataURL('image/png'), frames: _TT_FRAMES };
+    } finally {
+        disposeWeaponModel(model);
+    }
+}
+
+// Returns a resolved {url,frames} if cached, otherwise a Promise for it.
+function weaponIconSheet(name) {
+    if (name in _iconCache) {
+        const v = _iconCache[name];
+        return (v && typeof v.then === 'function') ? v : Promise.resolve(v);
+    }
+    const p = _ttQueue.then(() => _renderTurntable(name));
+    _iconCache[name] = p;
+    _ttQueue = p.then(() => {}, () => {}); // keep the chain alive on failure
+    p.then(
+        res => { _iconCache[name] = res; },
+        err => { console.warn('weapon icon render failed for', name, err); _iconCache[name] = null; }
+    );
+    return p;
+}
+
+function prewarmWeaponIcon(name) {
+    try { weaponIconSheet(name); } catch (e) {}
+}
+
+// Show a spinning turntable of `name`'s gun inside DOM element `el`.
+// Uses an inner <img> animated with translateX (GPU-composited - animating
+// background-position on a 16x-wide image was a heavy repaint).
+function applyWeaponIcon(el, name) {
+    if (!el || !el.dataset) return;
+    if (el.dataset.vmWeapon === name && el.dataset.vmReady === '1') return;
+    el.dataset.vmWeapon = name;
+
+    // one-time structural setup
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    el.style.overflow = 'hidden';
+    let img = el.querySelector('img.vm-spin');
+    if (!img) {
+        img = document.createElement('img');
+        img.className = 'vm-spin';
+        img.style.cssText = `position:absolute;top:0;left:0;height:100%;width:${_TT_FRAMES * 100}%;` +
+            'max-width:none;pointer-events:none;will-change:transform;';
+        el.appendChild(img);
+    }
+
+    const setSheet = (sheet) => {
+        if (!sheet || !sheet.url || el.dataset.vmWeapon !== name) return;
+        const n = sheet.frames;
+        img.style.width = `${n * 100}%`;
+        img.src = sheet.url;
+        img.style.setProperty('--vm-shift', `-${((n - 1) / n * 100).toFixed(4)}%`);
+        img.style.animation = `vm-spin-x 3s steps(${n - 1}) infinite`;
+        el.dataset.vmReady = '1';
+    };
+
+    const cached = _iconCache[name];
+    if (cached && cached.url) { setSheet(cached); return; }
+
+    // static placeholder while the render runs
+    el.dataset.vmReady = '0';
+    const flat = (typeof getWeaponImage === 'function') ? getWeaponImage(name) : null;
+    if (flat) {
+        img.src = flat;
+        img.style.width = '100%';
+        img.style.animation = 'none';
+    }
+    Promise.resolve(weaponIconSheet(name)).then(setSheet).catch(() => {});
 }

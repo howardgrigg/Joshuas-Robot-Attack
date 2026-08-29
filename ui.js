@@ -657,23 +657,24 @@ function updateWeaponHUD() {
         slot.style.background = 'rgba(40, 40, 40, 0.9)';
         
         if (i < gameState.player.hudWeapons.length) {
-            // Slot has a weapon
+            // Slot has a weapon - show a spinning render of its model
             const weaponName = gameState.player.hudWeapons[i];
-            const weaponImage = getWeaponImage(weaponName);
-            
-            if (weaponImage) {
-                imageContainer.style.backgroundImage = `url('${weaponImage}')`;
-                imageContainer.style.display = 'block';
-                emptyText.style.display = 'none';
-                
-                // Highlight current weapon
-                if (i === gameState.player.currentWeapon) {
-                    slot.style.border = '2px solid #4ecdc4';
-                    slot.style.background = 'rgba(78, 205, 196, 0.2)';
-                    slot.style.boxShadow = '0 0 10px rgba(78, 205, 196, 0.6)';
-                } else {
-                    slot.style.boxShadow = 'none';
-                }
+            if (typeof applyWeaponIcon === 'function') {
+                applyWeaponIcon(imageContainer, weaponName);
+            } else {
+                const weaponImage = getWeaponImage(weaponName);
+                if (weaponImage) imageContainer.style.backgroundImage = `url('${weaponImage}')`;
+            }
+            imageContainer.style.display = 'block';
+            emptyText.style.display = 'none';
+
+            // Highlight current weapon
+            if (i === gameState.player.currentWeapon) {
+                slot.style.border = '2px solid #4ecdc4';
+                slot.style.background = 'rgba(78, 205, 196, 0.2)';
+                slot.style.boxShadow = '0 0 10px rgba(78, 205, 196, 0.6)';
+            } else {
+                slot.style.boxShadow = 'none';
             }
         } else {
             // Empty slot

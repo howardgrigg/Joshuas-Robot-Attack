@@ -165,21 +165,21 @@ function updateCoins(scene, camera) {
             if (typeof spawnHitSparks === 'function') {
                 spawnHitSparks(scene, coin.position, new BABYLON.Color3(1, 0.85, 0.25));
             }
-            coin.dispose();
+            coin.dispose(false, true);
             gameState.coinDrops.splice(i, 1);
             continue;
         }
 
         // Despawn after 25s
         if (now - coin.spawnedAt > 25000) {
-            coin.dispose();
+            coin.dispose(false, true);
             gameState.coinDrops.splice(i, 1);
         }
     }
 }
 
 function clearCoinDrops() {
-    gameState.coinDrops.forEach(c => { if (c && !c.isDisposed()) c.dispose(); });
+    gameState.coinDrops.forEach(c => { if (c && !c.isDisposed()) c.dispose(false, true); });
     gameState.coinDrops = [];
 }
 

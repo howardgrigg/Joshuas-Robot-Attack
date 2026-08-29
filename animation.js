@@ -191,6 +191,7 @@ function animateRobotDeath(scene, enemy, callback) {
         if (explosionScale > 4) {
             clearInterval(explosionInterval);
             explosion.dispose();
+            explosionMaterial.dispose();
         }
     }, 50);
     

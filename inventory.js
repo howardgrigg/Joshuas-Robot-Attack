@@ -19,6 +19,7 @@ function collectWeapon(weaponName) {
 
     p.weapons.push(weaponName);
     p.weaponsCollected++;
+    if (typeof prewarmWeaponIcon === 'function') prewarmWeaponIcon(weaponName);
 
     const currentName = p.hudWeapons[p.currentWeapon];
     const isUpgrade = weaponDamageOf(weaponName) > weaponDamageOf(currentName);
@@ -119,18 +120,18 @@ function renderInventory() {
     for (const name of p.weapons) {
         const isEquipped = name === equippedName;
         const inQuickSlot = p.hudWeapons.includes(name);
-        const img = (typeof getWeaponImage === 'function') ? getWeaponImage(name) : null;
         const blurb = (typeof getWeaponDescription === 'function')
             ? getWeaponDescription(name) : '';
+        const esc = name.replace(/"/g, '&quot;').replace(/'/g, "\\'");
 
-        html += `<div onclick="equipFromInventory('${name.replace(/'/g, "\\'")}')"
+        html += `<div onclick="equipFromInventory('${esc}')"
             style="cursor:pointer;background:${isEquipped ? 'rgba(78,205,196,0.18)' : 'rgba(255,255,255,0.06)'};
             border:2px solid ${isEquipped ? '#4ecdc4' : 'rgba(255,255,255,0.12)'};border-radius:12px;
             padding:12px;display:flex;flex-direction:column;gap:8px;transition:transform .1s;"
             onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
             <div style="display:flex;align-items:center;gap:10px;">
-                <div style="width:52px;height:52px;flex:none;border-radius:8px;background:#1a1a1a
-                    ${img ? `;background-image:url('${img}');background-size:cover;background-position:center` : ''};"></div>
+                <div class="vm-icon" data-weapon="${name.replace(/"/g, '&quot;')}"
+                     style="width:56px;height:56px;flex:none;border-radius:8px;background:#1a1a1a;"></div>
                 <div style="font-weight:bold;font-size:15px;line-height:1.15;">${name}
                     ${isEquipped ? '<div style="color:#4ecdc4;font-size:12px;">● EQUIPPED</div>'
                         : (inQuickSlot ? '<div style="color:#888;font-size:12px;">in quick-slots</div>' : '')}
@@ -148,6 +149,13 @@ function renderInventory() {
     </div>`;
 
     inv.innerHTML = html;
+
+    // Fill each card's icon with a spinning turntable render (async, cached)
+    if (typeof applyWeaponIcon === 'function') {
+        inv.querySelectorAll('.vm-icon').forEach(el => {
+            applyWeaponIcon(el, el.getAttribute('data-weapon'));
+        });
+    }
 }
 
 function equipFromInventory(weaponName) {

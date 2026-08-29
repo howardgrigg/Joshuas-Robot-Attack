@@ -296,11 +296,11 @@ function clearLevelObjects() {
         }
     });
     
-    // Dispose of weapon drops
+    // Dispose of weapon drops (gun models carry their own materials)
     gameState.weaponDrops.forEach(drop => {
-        if (drop && drop.dispose) {
-            drop.dispose();
-        }
+        if (!drop) return;
+        if (typeof disposeWeaponModel === 'function') disposeWeaponModel(drop);
+        else if (drop.dispose) drop.dispose();
     });
     
     // Clear terrain objects (except buddy and camera)

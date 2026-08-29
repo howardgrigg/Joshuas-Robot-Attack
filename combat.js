@@ -229,7 +229,7 @@ function createHitEffect(scene, position) {
     material.emissiveColor = new BABYLON.Color3(1, 1, 0);
     effect.material = material;
 
-    setTimeout(() => effect.dispose(), 200);
+    setTimeout(() => { try { effect.dispose(); material.dispose(); } catch (e) {} }, 200);
 
     if (typeof spawnHitSparks === 'function') spawnHitSparks(scene, position);
 }

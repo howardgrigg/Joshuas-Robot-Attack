@@ -612,74 +612,34 @@ function dropWeapon(scene, position) {
     if (availableWeapons.length === 0) return;
     
     const randomWeapon = availableWeapons[Math.floor(Math.random() * availableWeapons.length)];
-    
-    const weaponDrop = BABYLON.MeshBuilder.CreateBox("weaponDrop", {size: 1}, scene);
-    weaponDrop.position = position.clone();
-    weaponDrop.position.y += 0.5;
-    
-    // Create material with weapon image texture
-    const weaponImagePath = getWeaponImage(randomWeapon);
-    
-    if (weaponImagePath) {
-        console.log(`Loading weapon image: ${weaponImagePath} for ${randomWeapon}`); // Debug log
-        
-        // Create single material with the weapon texture
-        const material = new BABYLON.StandardMaterial("weaponDropMaterial", scene);
-        
-        try {
-            const weaponTexture = new BABYLON.Texture(weaponImagePath, scene);
-            
-            // Handle texture loading with proper Babylon.js approach
-            if (weaponTexture.onLoadObservable) {
-                weaponTexture.onLoadObservable.add(() => {
-                    console.log(`Texture loaded successfully for ${randomWeapon}`);
-                });
-            }
-            
-            material.diffuseTexture = weaponTexture;
-            material.emissiveTexture = weaponTexture;
-            material.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.3); // Slight glow
-            material.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
-            
-            weaponDrop.material = material;
-            console.log(`Material applied successfully for ${randomWeapon}`);
-        } catch (error) {
-            console.error(`Error creating texture for ${randomWeapon}:`, error);
-            // Fallback to colored material
-            const weaponConfig = getWeaponConfig(randomWeapon);
-            material.diffuseColor = weaponConfig ? weaponConfig.color : new BABYLON.Color3(1, 1, 0);
-            material.emissiveColor = weaponConfig ? weaponConfig.color.scale(0.3) : new BABYLON.Color3(0.3, 0.3, 0);
-            weaponDrop.material = material;
-        }
-    } else {
-        console.error(`No image path found for weapon: ${randomWeapon}`);
-        // Fallback to colored material if image fails
-        const weaponConfig = getWeaponConfig(randomWeapon);
-        const material = new BABYLON.StandardMaterial("weaponDropMaterial", scene);
-        material.diffuseColor = weaponConfig ? weaponConfig.color : new BABYLON.Color3(1, 1, 0);
-        material.emissiveColor = weaponConfig ? weaponConfig.color.scale(0.3) : new BABYLON.Color3(0.3, 0.3, 0);
-        weaponDrop.material = material;
+
+    // Cap simultaneous drops - drop the oldest if there are too many
+    while (gameState.weaponDrops.length >= 6) {
+        const old = gameState.weaponDrops.shift();
+        if (typeof disposeWeaponModel === 'function') disposeWeaponModel(old);
+        else if (old && old.dispose) old.dispose();
     }
-    
-    // Add rotation animation to make it more noticeable
-    weaponDrop.animations = [];
-    const animationKeys = [];
-    
-    const rotationAnimation = new BABYLON.Animation(
-        "weaponDropRotation", 
-        "rotation.y", 
-        30, 
-        BABYLON.Animation.ANIMATIONTYPE_FLOAT, 
-        BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
-    );
-    
-    animationKeys.push({frame: 0, value: 0});
-    animationKeys.push({frame: 120, value: Math.PI * 2});
-    
-    rotationAnimation.setKeys(animationKeys);
-    weaponDrop.animations.push(rotationAnimation);
-    scene.beginAnimation(weaponDrop, 0, 120, true);
-    
+
+    // Drop the actual gun model (built by viewmodel.js), floating and spinning
+    let weaponDrop;
+    if (typeof createWeaponModel === 'function') {
+        weaponDrop = createWeaponModel(scene, randomWeapon, { renderingGroupId: 0 });
+        weaponDrop.scaling.setAll(2.6);
+    } else {
+        weaponDrop = BABYLON.MeshBuilder.CreateBox("weaponDrop", { size: 1 }, scene);
+        const wc = getWeaponConfig(randomWeapon);
+        const mat = new BABYLON.StandardMaterial("weaponDropMaterial", scene);
+        mat.diffuseColor = wc ? wc.color : new BABYLON.Color3(1, 1, 0);
+        mat.emissiveColor = wc ? wc.color.scale(0.3) : new BABYLON.Color3(0.3, 0.3, 0);
+        weaponDrop.material = mat;
+    }
+    weaponDrop.name = "weaponDrop";
+    weaponDrop.position = position.clone();
+    weaponDrop.position.y += 1.4;
+    weaponDrop._baseY = weaponDrop.position.y;
     weaponDrop.weaponName = randomWeapon;
+    weaponDrop.spawnedAt = Date.now();
+
     gameState.weaponDrops.push(weaponDrop);
+    if (typeof prewarmWeaponIcon === 'function') prewarmWeaponIcon(randomWeapon);
 }

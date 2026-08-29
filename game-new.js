@@ -294,19 +294,34 @@ function updateGame(scene, camera) {
         }
     }
     
-    // Update weapon drops
+    // Update weapon drops - float, spin, and vacuum up on contact
     for (let i = gameState.weaponDrops.length - 1; i >= 0; i--) {
         const drop = gameState.weaponDrops[i];
+        if (!drop) { gameState.weaponDrops.splice(i, 1); continue; }
+
+        drop.rotation.y += 0.03;
+        if (drop._baseY != null) {
+            drop.position.y = drop._baseY + Math.sin(currentTime / 380 + i) * 0.18;
+        }
+
+        // Despawn uncollected drops so gun models don't pile up
+        if (drop.spawnedAt && currentTime - drop.spawnedAt > 30000) {
+            if (typeof disposeWeaponModel === 'function') disposeWeaponModel(drop);
+            else drop.dispose();
+            gameState.weaponDrops.splice(i, 1);
+            continue;
+        }
+
         const distance = BABYLON.Vector3.Distance(drop.position, camera.position);
-        
         if (distance < 3) {
-            // collectWeapon returns false if we already own it; either way, take the box
+            // collectWeapon returns false if we already own it; either way, take it
             if (typeof collectWeapon === 'function') {
                 collectWeapon(drop.weaponName);
             } else {
                 addWeaponToHUD(drop.weaponName);
             }
-            drop.dispose();
+            if (typeof disposeWeaponModel === 'function') disposeWeaponModel(drop);
+            else drop.dispose();
             gameState.weaponDrops.splice(i, 1);
         }
     }
