@@ -475,8 +475,15 @@ function handleModalButton(index) {
 }
 
 // Game over modal with restart functionality
+let _runEnded = false;
 function showGameOver() {
-    showModal('Game Over!', 'Your journey ends here, but you can try again!', [
+    let msg = 'Your journey ends here, but you can try again!';
+    if (!_runEnded && typeof recordRunEnd === 'function') {
+        _runEnded = true;
+        const beat = recordRunEnd();
+        msg += recordsSummaryHTML(beat);
+    }
+    showModal('Game Over!', msg, [
         { 
             text: 'Restart Game', 
             action: () => {
@@ -513,6 +520,11 @@ function showLevelComplete(message) {
 
 // Victory modal
 function showVictory(message) {
+    if (!_runEnded && typeof recordRunEnd === 'function') {
+        _runEnded = true;
+        const beat = recordRunEnd();
+        message += recordsSummaryHTML(beat);
+    }
     showModal('🏆 VICTORY! 🏆', message, [
         { 
             text: 'Play Again', 

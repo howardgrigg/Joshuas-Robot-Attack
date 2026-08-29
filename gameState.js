@@ -10,7 +10,12 @@ let gameState = {
     keys: {},
     gameStarted: false,
     paused: false,
+    mode: 'campaign',      // 'campaign' | 'horde'
     currentLevel: 1,
+    streak: 0,
+    streakBest: 0,
+    lastKillAt: 0,
+    runKills: 0,
     player: {
         health: 200,
         currentWeapon: 0,
@@ -97,7 +102,9 @@ function initializeWelcomeScreen() {
 
 // Game start function
 function startGame() {
-    console.log('startGame function called');
+    if (gameState.gameStarted) return;
+    gameState.mode = (window.__startMode === 'horde') ? 'horde' : 'campaign';
+    console.log('startGame function called, mode:', gameState.mode);
     document.getElementById('welcomeScreen').style.display = 'none';
     document.getElementById('gameCanvas').style.display = 'block';
     document.getElementById('crosshair').style.display = 'block';
@@ -145,7 +152,9 @@ function startGame() {
     setupControls(scene, camera);
     setupMobileControls(scene, camera);
     initViewmodel(scene, camera);
-    
+    if (typeof initFeedback === 'function') initFeedback();
+    if (gameState.mode === 'horde' && typeof initHorde === 'function') initHorde(scene);
+
     // Start game loop
     engine.runRenderLoop(() => {
         updateGame(scene, camera);

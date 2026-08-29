@@ -360,24 +360,31 @@ function updateGame(scene, camera) {
     
     // Check collisions
     checkCollisions(scene);
-    
-    // Check for level completion
-    checkLevelComplete();
-    
-    // Spawn enemies until we've spawned the required amount for this level
-    const levelConfig = getCurrentLevelConfig();
-    if (gameState.enemiesSpawned < levelConfig.killsRequired && gameState.enemies.length < levelConfig.maxEnemies) {
-        const timeSinceLastSpawn = currentTime - (gameState.lastEnemySpawn || 0);
-        if (timeSinceLastSpawn > levelConfig.enemySpawnRate) {
-            createLevelEnemy(scene, levelConfig.enemyType);
-            gameState.lastEnemySpawn = currentTime;
-            gameState.enemiesSpawned++;
+
+    // Streak decay
+    if (typeof updateFeedback === 'function') updateFeedback();
+
+    if (gameState.mode === 'horde') {
+        if (typeof updateHorde === 'function') updateHorde(scene);
+    } else {
+        // Check for level completion
+        checkLevelComplete();
+
+        // Spawn enemies until we've spawned the required amount for this level
+        const levelConfig = getCurrentLevelConfig();
+        if (gameState.enemiesSpawned < levelConfig.killsRequired && gameState.enemies.length < levelConfig.maxEnemies) {
+            const timeSinceLastSpawn = currentTime - (gameState.lastEnemySpawn || 0);
+            if (timeSinceLastSpawn > levelConfig.enemySpawnRate) {
+                createLevelEnemy(scene, levelConfig.enemyType);
+                gameState.lastEnemySpawn = currentTime;
+                gameState.enemiesSpawned++;
+            }
         }
+        updateLevelUI();
     }
-    
+
     // Update UI
     document.getElementById('enemyCount').textContent = gameState.enemies.length;
-    updateLevelUI();
     
     // Update reload status based on current cooldown
     const now = Date.now();

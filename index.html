@@ -153,28 +153,92 @@
         .ws-card b { color: #4ecdc4; font-size: 0.98rem; display: block; margin-bottom: 3px; }
         .ws-card span { font-size: 0.85rem; color: #aeb9c9; line-height: 1.35; }
 
-        #startBtn {
+        .ws-buttons {
             margin-top: 6px;
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        #startBtn, #hordeBtn {
             font: inherit;
             font-weight: 900;
-            font-size: clamp(1.1rem, 3.4vw, 1.5rem);
+            font-size: clamp(1rem, 3vw, 1.35rem);
             letter-spacing: 0.06em;
             color: #04222b;
             background: linear-gradient(180deg, #6ff0e2, #38c6b6);
             border: none;
             border-radius: 999px;
-            padding: 16px 44px;
+            padding: 15px 36px;
             cursor: pointer;
             box-shadow: 0 10px 30px rgba(56,198,182,0.35), inset 0 1px 0 rgba(255,255,255,0.6);
-            animation: startPulse 1.6s ease-in-out infinite;
             transition: transform 0.12s ease;
         }
-        #startBtn:hover { transform: translateY(-2px) scale(1.03); }
-        #startBtn:active { transform: translateY(1px) scale(0.98); }
+        #startBtn { animation: startPulse 1.6s ease-in-out infinite; }
+        #hordeBtn {
+            color: #2b0d0d;
+            background: linear-gradient(180deg, #ffcf7a, #ff9a52);
+            box-shadow: 0 10px 30px rgba(255,154,82,0.35), inset 0 1px 0 rgba(255,255,255,0.6);
+        }
+        #startBtn:hover, #hordeBtn:hover { transform: translateY(-2px) scale(1.03); }
+        #startBtn:active, #hordeBtn:active { transform: translateY(1px) scale(0.98); }
         @keyframes startPulse {
             0%, 100% { box-shadow: 0 10px 30px rgba(56,198,182,0.35), inset 0 1px 0 rgba(255,255,255,0.6); }
             50%      { box-shadow: 0 10px 44px rgba(56,198,182,0.7), inset 0 1px 0 rgba(255,255,255,0.6); }
         }
+
+        /* --- combat feedback --- */
+        .fb-dmg {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            font-weight: 900;
+            font-size: 20px;
+            color: #ffe08a;
+            text-shadow: 0 2px 3px rgba(0,0,0,0.8);
+            pointer-events: none;
+            animation: fbRise 0.85s ease-out forwards;
+        }
+        .fb-dmg.fb-kill { font-size: 34px; color: #ff6b6b; }
+        @keyframes fbRise {
+            0%   { opacity: 0; transform: translate(-50%, -40%) scale(0.7); }
+            15%  { opacity: 1; transform: translate(-50%, -55%) scale(1.1); }
+            100% { opacity: 0; transform: translate(-50%, -160%) scale(0.95); }
+        }
+        .fb-streak {
+            position: absolute;
+            left: 50%; top: 28%;
+            transform: translateX(-50%);
+            font-weight: 900;
+            font-size: clamp(1.6rem, 5vw, 3rem);
+            letter-spacing: 0.04em;
+            text-shadow: 0 3px 10px rgba(0,0,0,0.7);
+            pointer-events: none;
+            white-space: nowrap;
+            animation: fbStreak 1.3s ease-out forwards;
+        }
+        @keyframes fbStreak {
+            0%   { opacity: 0; transform: translateX(-50%) scale(0.4) rotate(-6deg); }
+            18%  { opacity: 1; transform: translateX(-50%) scale(1.15) rotate(2deg); }
+            30%  { transform: translateX(-50%) scale(1) rotate(0); }
+            80%  { opacity: 1; }
+            100% { opacity: 0; transform: translateX(-50%) scale(1) translateY(-30px); }
+        }
+        #comboCounter {
+            position: fixed;
+            left: 50%; top: calc(50% + 26px);
+            transform: translateX(-50%);
+            font-weight: 900;
+            font-size: 15px;
+            letter-spacing: 0.08em;
+            color: #ffd166;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+            z-index: 1400;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        #comboCounter.bump { animation: fbBump 0.2s ease-out; }
+        @keyframes fbBump { 0% { transform: translateX(-50%) scale(1.5); } 100% { transform: translateX(-50%) scale(1); } }
 
         .ws-controls {
             margin-top: 14px;
@@ -415,7 +479,10 @@
                 </div>
             </div>
 
-            <button id="startBtn" type="button">▶ START GAME</button>
+            <div class="ws-buttons">
+                <button id="startBtn" type="button" onclick="window.__startMode='campaign'">▶ START GAME</button>
+                <button id="hordeBtn" type="button" onclick="window.__startMode='horde'">🌊 HORDE MODE</button>
+            </div>
 
             <p class="ws-controls">
                 <span style="white-space:nowrap"><kbd>WASD</kbd> move</span> &nbsp; <span style="white-space:nowrap"><kbd>Mouse</kbd> look</span> &nbsp; <span style="white-space:nowrap"><kbd>Click</kbd> shoot</span> &nbsp; <span style="white-space:nowrap"><kbd>Space</kbd> jump</span> &nbsp;
@@ -469,21 +536,24 @@
     <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
     
     <!-- Load modules in dependency order (bump ?v= to bust the browser cache) -->
-    <script src="gameState.js?v=11"></script>
-    <script src="weapons.js?v=11"></script>
-    <script src="audio.js?v=11"></script>
-    <script src="animation.js?v=11"></script>
-    <script src="terrain.js?v=11"></script>
-    <script src="entities.js?v=11"></script>
-    <script src="combat.js?v=11"></script>
-    <script src="ai.js?v=11"></script>
-    <script src="levels.js?v=11"></script>
-    <script src="daynight.js?v=11"></script>
-    <script src="graphics.js?v=11"></script>
-    <script src="viewmodel.js?v=11"></script>
-    <script src="coins.js?v=11"></script>
-    <script src="inventory.js?v=11"></script>
-    <script src="ui.js?v=11"></script>
-    <script src="game-new.js?v=11"></script>
+    <script src="gameState.js?v=12"></script>
+    <script src="weapons.js?v=12"></script>
+    <script src="audio.js?v=12"></script>
+    <script src="animation.js?v=12"></script>
+    <script src="terrain.js?v=12"></script>
+    <script src="entities.js?v=12"></script>
+    <script src="combat.js?v=12"></script>
+    <script src="ai.js?v=12"></script>
+    <script src="levels.js?v=12"></script>
+    <script src="daynight.js?v=12"></script>
+    <script src="graphics.js?v=12"></script>
+    <script src="viewmodel.js?v=12"></script>
+    <script src="coins.js?v=12"></script>
+    <script src="feedback.js?v=12"></script>
+    <script src="horde.js?v=12"></script>
+    <script src="records.js?v=12"></script>
+    <script src="inventory.js?v=12"></script>
+    <script src="ui.js?v=12"></script>
+    <script src="game-new.js?v=12"></script>
 </body>
 </html>

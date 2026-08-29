@@ -42,11 +42,13 @@ function createProjectile(scene, camera, weaponType) {
     const direction = aimPoint.subtract(startPosition).normalize();
 
     const projectiles = weapon.createProjectile(scene, startPosition, direction);
-    
+
+    const streakMult = gameState.player.streakDamageMult || 1;
     projectiles.forEach(projectile => {
+        if (streakMult !== 1) projectile.damage = Math.round(projectile.damage * streakMult);
         gameState.projectiles.push(projectile);
     });
-    
+
     return projectiles[0];
 }
 
@@ -101,10 +103,13 @@ function checkCollisions(scene) {
                 } else if (projectile.special === 'poison') {
                     enemy.health -= projectile.damage;
                     poisonEnemy(enemy, projectile.damage);
-                    
+                    if (typeof showDamageNumber === 'function')
+                        showDamageNumber(scene, enemy.position, projectile.damage, enemy.health <= 0);
+
                     if (enemy.health <= 0) {
                         enemy.health = 0; // Ensure health shows 0
                         updateHealthBar(enemy);
+                        if (typeof registerKill === 'function') registerKill(scene);
                         handleEnemyDeath(scene, enemy);
                     } else {
                         updateHealthBar(enemy);
@@ -112,10 +117,13 @@ function checkCollisions(scene) {
                     }
                 } else {
                     enemy.health -= projectile.damage;
-                    
+                    if (typeof showDamageNumber === 'function')
+                        showDamageNumber(scene, enemy.position, projectile.damage, enemy.health <= 0);
+
                     if (enemy.health <= 0) {
                         enemy.health = 0; // Ensure health shows 0
                         updateHealthBar(enemy);
+                        if (typeof registerKill === 'function') registerKill(scene);
                         handleEnemyDeath(scene, enemy);
                     } else {
                         updateHealthBar(enemy);
@@ -145,9 +153,11 @@ function checkCollisions(scene) {
                 
                 projectile.dispose();
                 gameState.buddyProjectiles.splice(i, 1);
-                
+
                 enemy.health -= projectile.damage;
-                
+                if (typeof showDamageNumber === 'function')
+                    showDamageNumber(scene, enemy.position, projectile.damage, enemy.health <= 0);
+
                 if (enemy.health <= 0) {
                     enemy.health = 0; // Ensure health shows 0
                     updateHealthBar(enemy);
@@ -203,8 +213,10 @@ function handleEnemyDeath(scene, enemy) {
         if (enemy.isBoss) {
             // Stop boss fight music when boss dies
             stopBossFightMusic();
-            
-            if (gameState.currentLevel >= 5) {
+
+            if (gameState.mode === 'horde') {
+                // Horde: the wave-clear check in updateHorde() handles progression
+            } else if (gameState.currentLevel >= 5) {
                 showGameComplete();
                 gameState.gameStarted = false;
             } else {
