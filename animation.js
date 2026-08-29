@@ -1,6 +1,12 @@
 // Animation and Visual Effects Module
 // Handles robot animations, visual effects, and death sequences
 
+// Set an eye's glow, keeping its own colour hue and scaling brightness by intensity
+function setEyeGlow(eye, intensity) {
+    const c = eye._glowColor || new BABYLON.Color3(1, 0, 0);
+    eye.material.emissiveColor = new BABYLON.Color3(c.r * intensity, c.g * intensity, c.b * intensity);
+}
+
 // Rotate enemy to face a specific direction
 function rotateEnemyTowards(enemy, direction) {
     const angle = Math.atan2(direction.x, direction.z);
@@ -32,7 +38,8 @@ function animateRobotWalking(enemy) {
     
     // Slight head bob while walking
     if (enemy.robotParts.head) {
-        enemy.robotParts.head.position.y = 1.5 + Math.sin(enemy.animationTime * 2) * 0.05;
+        const baseY = enemy.robotParts.head._baseY || 1.5;
+        enemy.robotParts.head.position.y = baseY + Math.sin(enemy.animationTime * 2) * 0.05;
     }
     
     // Make antenna wiggle
@@ -58,8 +65,8 @@ function animateRobotShooting(enemy) {
     enemy.animationTime += 0.3;
     if (enemy.robotParts.leftEye && enemy.robotParts.rightEye) {
         const intensity = 1 + Math.sin(enemy.animationTime * 5) * 0.5;
-        enemy.robotParts.leftEye.material.emissiveColor = new BABYLON.Color3(intensity, 0, 0);
-        enemy.robotParts.rightEye.material.emissiveColor = new BABYLON.Color3(intensity, 0, 0);
+        setEyeGlow(enemy.robotParts.leftEye, intensity);
+        setEyeGlow(enemy.robotParts.rightEye, intensity);
     }
     
     // Reset legs to standing position
@@ -80,7 +87,8 @@ function animateRobotIdle(enemy) {
     // Subtle breathing-like motion
     const breathe = Math.sin(enemy.animationTime) * 0.02;
     if (enemy.robotParts.head) {
-        enemy.robotParts.head.position.y = 1.5 + breathe;
+        const baseY = enemy.robotParts.head._baseY || 1.5;
+        enemy.robotParts.head.position.y = baseY + breathe;
     }
     
     // Arms relaxed at sides
@@ -109,8 +117,8 @@ function animateRobotIdle(enemy) {
     // Eyes dim and brighten slowly
     if (enemy.robotParts.leftEye && enemy.robotParts.rightEye) {
         const eyeGlow = 0.8 + Math.sin(enemy.animationTime * 0.7) * 0.2;
-        enemy.robotParts.leftEye.material.emissiveColor = new BABYLON.Color3(eyeGlow, 0, 0);
-        enemy.robotParts.rightEye.material.emissiveColor = new BABYLON.Color3(eyeGlow, 0, 0);
+        setEyeGlow(enemy.robotParts.leftEye, eyeGlow);
+        setEyeGlow(enemy.robotParts.rightEye, eyeGlow);
     }
 }
 
@@ -144,7 +152,8 @@ function animateRobotHit(enemy) {
             // Restore original color
             enemy.material.diffuseColor = originalColor;
             if (enemy.robotParts.head) {
-                enemy.robotParts.head.material.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.9);
+                enemy.robotParts.head.material.diffuseColor =
+                    enemy.robotParts.head._baseColor || new BABYLON.Color3(0.8, 0.8, 0.9);
             }
             
             enemy.isAnimating = false;
