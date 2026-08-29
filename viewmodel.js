@@ -82,6 +82,13 @@ function _cyl(name, dTop, dBot, h) {
 function _sph(name, dia) {
     return BABYLON.MeshBuilder.CreateSphere(name, { diameter: dia, segments: 10 }, Viewmodel.scene);
 }
+function _tor(name, dia, thick) {
+    return BABYLON.MeshBuilder.CreateTorus(name,
+        { diameter: dia, thickness: thick, tessellation: 16 }, Viewmodel.scene);
+}
+function _poly(name, ptype, sz) {
+    return BABYLON.MeshBuilder.CreatePolyhedron(name, { type: ptype, size: sz }, Viewmodel.scene);
+}
 
 // A pistol grip most archetypes share
 function _addGrip(back) {
@@ -94,7 +101,7 @@ function _addGrip(back) {
 
 // --- Per-weapon look ---------------------------------------------------
 
-// Map a weapon to an archetype + accent colour, from its config + name.
+// Map a weapon to an archetype + accent colour, from its name then its config.
 function weaponSpec(name) {
     let cfg = null;
     try { cfg = getWeaponConfig(name); } catch (e) {}
@@ -102,21 +109,36 @@ function weaponSpec(name) {
     const type = cfg ? cfg.projectileType : 'energy';
     const size = cfg ? (cfg.size || 0.5) : 0.5;
     const multi = cfg ? (cfg.projectileCount || 1) : 1;
-    const poison = cfg && cfg.special === 'poison';
+    const spread = !!(cfg && cfg.spread > 0);
+    const fast = !!(cfg && cfg.speed >= 3.3);
+    const slowFire = !!(cfg && cfg.fireRate >= 700);
+    const poison = !!(cfg && cfg.special === 'poison');
+    const n = (name || '').toLowerCase();
 
-    let archetype = 'blaster';
-    if (type === 'beam') archetype = 'beam';
+    let archetype;
+    // 1. Named silhouettes - the iconic ones get their own shape
+    if (/sword|blade/.test(n)) archetype = 'sword';
+    else if (/unicorn/.test(n)) archetype = 'horn';
+    else if (/black hole|void|gravity|time warp|quantum/.test(n)) archetype = 'orb';
+    else if (/dragon|phoenix/.test(n)) archetype = 'maw';
+    else if (/crystal|diamond|ruby|emerald|sapphire/.test(n)) archetype = 'gem';
+    else if (/lightning|thunder|zapper|tesla|storm caller/.test(n)) archetype = 'tesla';
+    else if (/sonic/.test(n)) archetype = 'sonic';
+    else if (/wand|fairy/.test(n)) archetype = 'wand';
+    else if (/cyber|code cannon|data stream|robot/.test(n)) archetype = 'cyberpistol';
+    else if (/sun beam|light ray|space ripper|sniper/.test(n)) archetype = 'sniper';
+    // 2. Derived from stats
+    else if (multi >= 4 || (spread && multi >= 3)) archetype = 'gatling';
+    else if (spread) archetype = 'scatter';
+    else if (fast && slowFire) archetype = 'sniper';
+    // 3. Fall back to projectile type
+    else if (type === 'beam') archetype = 'beam';
     else if (type === 'laser') archetype = 'laser';
     else if (type === 'rocket') archetype = 'cannon';
     else if (type === 'elemental') archetype = 'elemental';
     else if (type === 'magic') archetype = 'staff';
     else if (type === 'arrow') archetype = 'bow';
-
-    // Name-based special silhouettes
-    const n = (name || '').toLowerCase();
-    if (n.includes('sword') || n.includes('blade')) archetype = 'sword';
-    else if (n.includes('unicorn') || n.includes('horn')) archetype = 'horn';
-    else if (n.includes('black hole') || n.includes('void')) archetype = 'voidcannon';
+    else archetype = 'blaster';
 
     if (poison) { color.r *= 0.6; color.g = Math.min(1, color.g + 0.3); color.b *= 0.5; }
 
@@ -161,19 +183,161 @@ function viewmodelSetWeapon(weaponName) {
             _addGrip(-0.1);
             break;
         }
-        case 'cannon':
-        case 'voidcannon': {
+        case 'cannon': {
             const tube = _vmAdd(_cyl("vmT", 0.26 + spec.size * 0.06, 0.24, 0.5), B);
             tube.rotation.x = Math.PI / 2; tube.position.z = 0.16;
             const back = _vmAdd(_box("vmBk", 0.22, 0.22, 0.18), D); back.position.z = -0.14;
-            const ring = _vmAdd(BABYLON.MeshBuilder.CreateTorus("vmRg",
-                { diameter: 0.3, thickness: 0.05, tessellation: 16 }, Viewmodel.scene), A);
+            const ring = _vmAdd(_tor("vmRg", 0.3, 0.05), A);
             ring.rotation.x = Math.PI / 2; ring.position.z = 0.4;
-            const tip = _vmAdd(_sph("vmTip", 0.18),
-                spec.archetype === 'voidcannon' ? D : A);
+            const tip = _vmAdd(_sph("vmTip", 0.18), A);
             tip.position.z = 0.44; tip.scaling.z = 0.6;
             const sight = _vmAdd(_box("vmS", 0.05, 0.08, 0.1), M); sight.position.set(0, 0.16, -0.05);
             _addGrip(-0.12);
+            break;
+        }
+        case 'gatling': {
+            const drum = _vmAdd(_box("vmDr", 0.24, 0.24, 0.22), B); drum.position.z = -0.05;
+            const back = _vmAdd(_box("vmGb", 0.18, 0.18, 0.06), D); back.position.z = -0.19;
+            const hub = _vmAdd(_cyl("vmHub", 0.1, 0.1, 0.44), M);
+            hub.rotation.x = Math.PI / 2; hub.position.z = 0.26;
+            for (let i = 0; i < 4; i++) {
+                const a = (i / 4) * Math.PI * 2;
+                const bar = _vmAdd(_cyl("vmGB" + i, 0.055, 0.055, 0.46), M);
+                bar.rotation.x = Math.PI / 2;
+                bar.position.set(Math.cos(a) * 0.085, Math.sin(a) * 0.085, 0.3);
+            }
+            const ring = _vmAdd(_tor("vmGR", 0.26, 0.045), A);
+            ring.rotation.x = Math.PI / 2; ring.position.z = 0.46;
+            _addGrip(-0.12);
+            break;
+        }
+        case 'scatter': {
+            const body = _vmAdd(_box("vmB", 0.16, 0.15, 0.32), B); body.position.z = -0.02;
+            const flare = _vmAdd(_cyl("vmFl", 0.34, 0.12, 0.24), A);
+            flare.rotation.x = Math.PI / 2; flare.position.z = 0.28;
+            const under = _vmAdd(_cyl("vmUn", 0.09, 0.09, 0.22), M);
+            under.rotation.x = Math.PI / 2; under.position.set(0, -0.09, 0.2);
+            const pump = _vmAdd(_box("vmPu", 0.11, 0.08, 0.14), M); pump.position.set(0, -0.1, 0.06);
+            _addGrip(-0.1);
+            break;
+        }
+        case 'sniper': {
+            const body = _vmAdd(_box("vmB", 0.11, 0.12, 0.34), B); body.position.z = -0.06;
+            const barrel = _vmAdd(_cyl("vmBr", 0.05, 0.055, 0.88), M);
+            barrel.rotation.x = Math.PI / 2; barrel.position.z = 0.44;
+            const brake = _vmAdd(_cyl("vmBk", 0.1, 0.07, 0.1), A);
+            brake.rotation.x = Math.PI / 2; brake.position.z = 0.86;
+            const scope = _vmAdd(_cyl("vmSc", 0.09, 0.09, 0.3), D);
+            scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.15, 0.04);
+            const lens = _vmAdd(_cyl("vmLn", 0.08, 0.08, 0.02), A);
+            lens.rotation.x = Math.PI / 2; lens.position.set(0, 0.15, 0.19);
+            const stock = _vmAdd(_box("vmSt", 0.08, 0.14, 0.22), B); stock.position.z = -0.3;
+            [-1, 1].forEach(s => {
+                const leg = _vmAdd(_box("vmLg" + s, 0.02, 0.18, 0.02), M);
+                leg.position.set(s * 0.06, -0.12, 0.32); leg.rotation.z = s * 0.35;
+            });
+            _addGrip(-0.12);
+            break;
+        }
+        case 'tesla': {
+            const body = _vmAdd(_box("vmB", 0.13, 0.14, 0.4), B); body.position.z = 0;
+            [0.06, 0.2].forEach((z, i) => {
+                const coil = _vmAdd(_tor("vmCo" + i, 0.17, 0.035), A);
+                coil.rotation.x = Math.PI / 2; coil.position.z = z;
+            });
+            [-1, 0, 1].forEach(s => {
+                const prong = _vmAdd(_box("vmPr" + s, 0.03, 0.03, 0.26), A);
+                prong.position.set(s * 0.06, s === 0 ? 0.04 : 0.0, 0.42);
+                prong.rotation.y = s * 0.32;
+                prong.rotation.x = s === 0 ? -0.15 : 0;
+            });
+            _addGrip(-0.12);
+            break;
+        }
+        case 'wand': {
+            const rod = _vmAdd(_cyl("vmRod", 0.04, 0.045, 0.5), M);
+            rod.rotation.x = 1.2; rod.position.set(0, -0.02, 0.05);
+            const wrap = _vmAdd(_cyl("vmWr", 0.06, 0.06, 0.1), B);
+            wrap.rotation.x = 1.2; wrap.position.set(0, -0.13, -0.12);
+            const star = _vmAdd(_poly("vmStar", 0, 0.08), A);
+            star.position.set(0, 0.16, 0.3);
+            const spark = _vmAdd(_sph("vmSpk", 0.05), A);
+            spark.position.set(0.07, 0.22, 0.34);
+            break;
+        }
+        case 'gem': {
+            const handle = _vmAdd(_box("vmHd", 0.07, 0.16, 0.1), B); handle.position.set(0, -0.05, -0.14);
+            const guard = _vmAdd(_box("vmGd", 0.2, 0.05, 0.06), M); guard.position.z = -0.04;
+            const big = _vmAdd(_poly("vmBig", 2, 0.16), A); big.position.z = 0.2;
+            const s1 = _vmAdd(_poly("vmS1", 1, 0.07), A); s1.position.set(0.07, 0.08, 0.08);
+            const s2 = _vmAdd(_poly("vmS2", 1, 0.06), A); s2.position.set(-0.06, -0.03, 0.12);
+            break;
+        }
+        case 'orb': {
+            const body = _vmAdd(_box("vmB", 0.12, 0.13, 0.24), B); body.position.z = -0.08;
+            [0.12, 0.4].forEach((z, i) => {
+                const ring = _vmAdd(_tor("vmOr" + i, 0.3, 0.04), M);
+                ring.rotation.x = Math.PI / 2; ring.position.z = z;
+            });
+            [0, 1, 2].forEach(i => {
+                const a = (i / 3) * Math.PI * 2;
+                const strut = _vmAdd(_box("vmSt" + i, 0.02, 0.02, 0.3), M);
+                strut.position.set(Math.cos(a) * 0.14, Math.sin(a) * 0.14, 0.26);
+            });
+            const core = _vmAdd(_sph("vmCore", 0.2), A); core.position.z = 0.26;
+            _addGrip(-0.1);
+            break;
+        }
+        case 'maw': {
+            const body = _vmAdd(_box("vmB", 0.15, 0.16, 0.36), B); body.position.z = -0.02;
+            const jawT = _vmAdd(_cyl("vmJT", 0.24, 0.06, 0.22), D);
+            jawT.rotation.x = Math.PI / 2 - 0.22; jawT.position.set(0, 0.06, 0.3);
+            const jawB = _vmAdd(_cyl("vmJB", 0.24, 0.06, 0.22), D);
+            jawB.rotation.x = Math.PI / 2 + 0.22; jawB.position.set(0, -0.06, 0.3);
+            const throat = _vmAdd(_sph("vmTh", 0.15), A); throat.position.z = 0.28;
+            [-1, 1].forEach(s => {
+                const horn = _vmAdd(_cyl("vmHn" + s, 0.0, 0.05, 0.16), M);
+                horn.position.set(s * 0.08, 0.12, 0.06); horn.rotation.x = -0.4;
+            });
+            _addGrip(-0.12);
+            break;
+        }
+        case 'cyberpistol': {
+            const body = _vmAdd(_box("vmB", 0.13, 0.16, 0.34), B); body.position.z = 0;
+            const top = _vmAdd(_box("vmTp", 0.1, 0.05, 0.22), M); top.position.set(0, 0.1, 0.03);
+            const barrel = _vmAdd(_box("vmBr", 0.06, 0.06, 0.3), M); barrel.position.z = 0.3;
+            const muzzle = _vmAdd(_box("vmMz", 0.09, 0.09, 0.06), A); muzzle.position.z = 0.46;
+            const screen = _vmAdd(_box("vmScr", 0.02, 0.09, 0.13), A); screen.position.set(0.075, 0.0, -0.02);
+            const ant = _vmAdd(_cyl("vmAnt", 0.018, 0.018, 0.16), M);
+            ant.position.set(-0.04, 0.18, -0.12);
+            const antTip = _vmAdd(_sph("vmAT", 0.035), A); antTip.position.set(-0.04, 0.27, -0.12);
+            _addGrip(-0.12);
+            break;
+        }
+        case 'sonic': {
+            const body = _vmAdd(_box("vmB", 0.14, 0.15, 0.28), B); body.position.z = -0.04;
+            const coneOut = _vmAdd(_cyl("vmCn", 0.36, 0.1, 0.26), B);
+            coneOut.rotation.x = Math.PI / 2; coneOut.position.z = 0.3;
+            const coneIn = _vmAdd(_cyl("vmCi", 0.28, 0.06, 0.2), A);
+            coneIn.rotation.x = Math.PI / 2; coneIn.position.z = 0.3;
+            [-1, 1].forEach(s => {
+                const vent = _vmAdd(_box("vmVt" + s, 0.04, 0.1, 0.14), M);
+                vent.position.set(s * 0.09, 0, 0);
+            });
+            _addGrip(-0.1);
+            break;
+        }
+        case 'bow': {
+            const riser = _vmAdd(_box("vmRi", 0.06, 0.34, 0.08), B); riser.position.z = 0.0;
+            [-1, 1].forEach(s => {
+                const limb = _vmAdd(_box("vmLm" + s, 0.04, 0.24, 0.05), M);
+                limb.position.set(0, s * 0.26, 0.02); limb.rotation.x = s * -0.5;
+            });
+            const bolt = _vmAdd(_cyl("vmBo", 0.02, 0.03, 0.5), A);
+            bolt.rotation.x = Math.PI / 2; bolt.position.z = 0.2;
+            const tip = _vmAdd(_cyl("vmBt", 0.0, 0.06, 0.1), A);
+            tip.rotation.x = Math.PI / 2; tip.position.z = 0.46;
+            _addGrip(-0.1);
             break;
         }
         case 'elemental': {
