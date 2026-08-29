@@ -51,51 +51,151 @@
         
         #welcomeScreen {
             position: absolute;
-            top: 0;
-            left: 0;
+            inset: 0;
             width: 100vw;
             height: 100vh;
-            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            background:
+                radial-gradient(1200px 600px at 50% -10%, rgba(78,205,196,0.18), transparent 60%),
+                radial-gradient(900px 500px at 15% 110%, rgba(255,107,107,0.16), transparent 60%),
+                linear-gradient(135deg, #0b0b18, #10182e 45%, #0a2138);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 2000;
-            color: white;
+            color: #eef2f7;
             text-align: center;
+            cursor: pointer;
+            overflow: hidden;
+            padding: 24px;
+            box-sizing: border-box;
         }
-        
-        #gameTitle {
-            font-size: 4rem;
+
+        /* drifting robots in the background */
+        .ws-bot {
+            position: absolute;
+            font-size: 2.6rem;
+            opacity: 0.16;
+            pointer-events: none;
+            user-select: none;
+            animation: wsFloat linear infinite;
+            filter: drop-shadow(0 0 12px rgba(78,205,196,0.35));
+        }
+        @keyframes wsFloat {
+            from { transform: translateY(110vh) rotate(-12deg); }
+            to   { transform: translateY(-20vh) rotate(12deg); }
+        }
+
+        .ws-inner {
+            position: relative;
+            z-index: 1;
+            max-width: 760px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .ws-badge {
+            font-size: 0.8rem;
+            letter-spacing: 0.18em;
             font-weight: bold;
-            margin-bottom: 2rem;
-            text-shadow: 3px 3px 6px rgba(0,0,0,0.7);
+            color: #ffd166;
+            border: 1px solid rgba(255,209,102,0.5);
+            background: rgba(255,209,102,0.08);
+            padding: 6px 14px;
+            border-radius: 999px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        #gameTitle {
+            font-size: clamp(2.2rem, 8vw, 4.6rem);
+            font-weight: 900;
+            line-height: 1.02;
+            margin: 0;
+            letter-spacing: 0.01em;
             background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            animation: glow 2s ease-in-out infinite alternate;
+            animation: glow 2.4s ease-in-out infinite alternate;
         }
-        
+
         @keyframes glow {
-            from { filter: drop-shadow(0 0 20px rgba(255,107,107,0.4)); }
-            to { filter: drop-shadow(0 0 30px rgba(78,205,196,0.6)); }
+            from { filter: drop-shadow(0 0 18px rgba(255,107,107,0.35)); }
+            to   { filter: drop-shadow(0 0 34px rgba(78,205,196,0.6)); }
         }
-        
-        #startInstructions {
-            font-size: 1.2rem;
-            line-height: 1.6;
+
+        .ws-tag {
+            font-size: clamp(1rem, 2.6vw, 1.25rem);
+            color: #b9c4d4;
+            margin: 0;
+            max-width: 40ch;
         }
-        
-        #startInstructions strong {
-            font-size: 1.5rem;
-            color: #4ecdc4;
-            animation: pulse 1.5s ease-in-out infinite;
+
+        .ws-cards {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 4px 0 2px;
         }
-        
+        .ws-card {
+            flex: 1 1 200px;
+            max-width: 230px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 14px 14px 16px;
+        }
+        .ws-card .ico { font-size: 1.8rem; display: block; margin-bottom: 6px; }
+        .ws-card b { color: #4ecdc4; font-size: 0.98rem; display: block; margin-bottom: 3px; }
+        .ws-card span { font-size: 0.85rem; color: #aeb9c9; line-height: 1.35; }
+
+        #startBtn {
+            margin-top: 6px;
+            font: inherit;
+            font-weight: 900;
+            font-size: clamp(1.1rem, 3.4vw, 1.5rem);
+            letter-spacing: 0.06em;
+            color: #04222b;
+            background: linear-gradient(180deg, #6ff0e2, #38c6b6);
+            border: none;
+            border-radius: 999px;
+            padding: 16px 44px;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(56,198,182,0.35), inset 0 1px 0 rgba(255,255,255,0.6);
+            animation: startPulse 1.6s ease-in-out infinite;
+            transition: transform 0.12s ease;
+        }
+        #startBtn:hover { transform: translateY(-2px) scale(1.03); }
+        #startBtn:active { transform: translateY(1px) scale(0.98); }
+        @keyframes startPulse {
+            0%, 100% { box-shadow: 0 10px 30px rgba(56,198,182,0.35), inset 0 1px 0 rgba(255,255,255,0.6); }
+            50%      { box-shadow: 0 10px 44px rgba(56,198,182,0.7), inset 0 1px 0 rgba(255,255,255,0.6); }
+        }
+
+        .ws-controls {
+            margin-top: 14px;
+            font-size: 0.82rem;
+            color: #8b97a8;
+            line-height: 2;
+            max-width: 64ch;
+        }
+        .ws-controls kbd {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.16);
+            border-bottom-width: 2px;
+            border-radius: 5px;
+            padding: 1px 6px;
+            font: inherit;
+            color: #dfe6ef;
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
+            50% { opacity: 0.55; }
         }
         
         @keyframes damageFlash {
@@ -264,69 +364,63 @@
                 bottom: 10px;
             }
             
-            #gameTitle {
-                font-size: 2.5rem;
-                margin-bottom: 1rem;
-            }
-            
-            #startInstructions {
-                font-size: 1rem;
-                padding: 0 20px;
-                max-width: 90vw;
-            }
-            
-            #controls {
-                font-size: 0.9rem;
-                padding: 0.8rem;
-                margin: 0.5rem;
-            }
-            
             #welcomeScreen {
-                padding: 20px;
-                box-sizing: border-box;
                 overflow-y: auto;
                 justify-content: flex-start;
-                padding-top: 5vh;
+                padding-top: 6vh;
             }
+            .ws-bot { font-size: 1.8rem; }
         }
-        
-        @media (max-height: 600px) {
-            #gameTitle {
-                font-size: 2rem;
-                margin-bottom: 0.5rem;
+
+        @media (max-height: 620px) {
+            #welcomeScreen {
+                overflow-y: auto;
+                justify-content: flex-start;
+                padding-top: 3vh;
             }
-            
-            #startInstructions {
-                font-size: 0.9rem;
-                line-height: 1.4;
-            }
-            
-            #controls {
-                font-size: 0.8rem;
-                padding: 0.5rem;
-            }
+            .ws-inner { gap: 12px; }
+            .ws-cards { display: none; }
         }
     </style>
 </head>
 <body>
     <div id="welcomeScreen">
-        <h1 id="gameTitle">JOSHUA'S ROBOT ATTACK</h1>
-        <div id="startInstructions">
-            <p><strong>You are the last human standing. Robots have taken over the world.</strong></p>
-            <p><strong>You are the only one left to stop them.</strong></p>
-            <br>
-            <p><strong>Special Features:</strong></p>
-            <p>• If you walk through your buddy you get more health</p>
-            <p>• Pick up weapons in boxes that the robots drop</p>
-            <p>• If you stand next to the blue guy/buddy he will shoot for you</p>
-            <br>
-            <p><strong>Click to Start Game</strong></p>
-            <br>
-            <div id="controls">
-                <p>WASD/Arrows: Move | Mouse: Look | SPACE: Jump</p>
-                <p>Click: Shoot | Keys 1-5: Switch Weapons</p>
-                <p>Find cover behind rocks and trees!</p>
+        <span class="ws-bot" style="left:8%;  animation-duration:19s; animation-delay:-2s;">🤖</span>
+        <span class="ws-bot" style="left:24%; animation-duration:26s; animation-delay:-11s; font-size:2rem;">🤖</span>
+        <span class="ws-bot" style="left:47%; animation-duration:22s; animation-delay:-6s;">🦾</span>
+        <span class="ws-bot" style="left:68%; animation-duration:30s; animation-delay:-18s; font-size:3.2rem;">🤖</span>
+        <span class="ws-bot" style="left:83%; animation-duration:17s; animation-delay:-4s;">⚙️</span>
+        <span class="ws-bot" style="left:92%; animation-duration:24s; animation-delay:-14s; font-size:2rem;">🤖</span>
+
+        <div class="ws-inner">
+            <span class="ws-badge">⚠ EARTH: OVERRUN</span>
+            <h1 id="gameTitle">JOSHUA'S<br>ROBOT ATTACK</h1>
+            <p class="ws-tag">You're the last human standing. Grab a blaster, find your buddy, and take the planet back.</p>
+
+            <div class="ws-cards">
+                <div class="ws-card">
+                    <span class="ico">🤝</span>
+                    <b>Your Buddy</b>
+                    <span>Walk through the blue robot to heal. Stand near him and he shoots for you.</span>
+                </div>
+                <div class="ws-card">
+                    <span class="ico">🔫</span>
+                    <b>50 Guns to Collect</b>
+                    <span>Robots drop weapons — spin through your collection with E and swap any time.</span>
+                </div>
+                <div class="ws-card">
+                    <span class="ico">🌗</span>
+                    <b>Day &amp; Night</b>
+                    <span>The sun crosses the sky. Robots that come out at night are tougher.</span>
+                </div>
             </div>
+
+            <button id="startBtn" type="button">▶ START GAME</button>
+
+            <p class="ws-controls">
+                <span style="white-space:nowrap"><kbd>WASD</kbd> move</span> &nbsp; <span style="white-space:nowrap"><kbd>Mouse</kbd> look</span> &nbsp; <span style="white-space:nowrap"><kbd>Click</kbd> shoot</span> &nbsp; <span style="white-space:nowrap"><kbd>Space</kbd> jump</span> &nbsp;
+                <span style="white-space:nowrap"><kbd>1</kbd>–<kbd>5</kbd> weapons</span> &nbsp; <span style="white-space:nowrap"><kbd>E</kbd> gun collection</span> &nbsp; <span style="white-space:nowrap"><kbd>B</kbd> shop</span> &nbsp; <span style="white-space:nowrap"><kbd>Q</kbd> invisibility</span>
+            </p>
         </div>
     </div>
     
