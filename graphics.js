@@ -351,8 +351,14 @@ function spawnMuzzleFlash(scene, camera) {
     if (now - Graphics._lastMuzzle < 55) return;
     Graphics._lastMuzzle = now;
 
+    // Originate at the viewmodel's barrel tip (front-right-below the camera)
     const fwd = camera.getForwardRay().direction;
-    const pos = camera.position.add(fwd.scale(1.7)).add(new BABYLON.Vector3(0, -0.35, 0));
+    const right = camera.getDirection(BABYLON.Axis.X);
+    const up = camera.getDirection(BABYLON.Axis.Y);
+    const pos = camera.position
+        .add(fwd.scale(1.35))
+        .add(right.scale(0.32))
+        .add(up.scale(-0.28));
 
     // No dynamic light here - additive particles + bloom read as a flash and
     // stay clear of the StandardMaterial 4-light limit.

@@ -144,6 +144,7 @@ function startGame() {
     createBuddy(scene);
     setupControls(scene, camera);
     setupMobileControls(scene, camera);
+    initViewmodel(scene, camera);
     
     // Start game loop
     engine.runRenderLoop(() => {

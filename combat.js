@@ -15,6 +15,7 @@ function shoot(scene, camera) {
     
     createProjectile(scene, camera, weapon);
     if (typeof spawnMuzzleFlash === 'function') spawnMuzzleFlash(scene, camera);
+    if (typeof viewmodelRecoil === 'function') viewmodelRecoil();
     playWeaponSound(weapon);
     gameState.player.lastShot = currentTime;
     

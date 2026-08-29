@@ -689,6 +689,7 @@ function updateWeaponDisplay() {
     if (currentWeaponName) {
         document.getElementById('currentWeapon').textContent = currentWeaponName;
         document.getElementById('weaponDescription').textContent = getWeaponDescription(currentWeaponName);
+        if (typeof viewmodelSetWeapon === 'function') viewmodelSetWeapon(currentWeaponName);
     }
 }
 

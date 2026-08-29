@@ -54,7 +54,16 @@ function updateGame(scene, camera) {
     // Coins & upgrades
     updateCoins(scene, camera);
     updateInvisibility();
-    
+
+    // First-person weapon viewmodel (bob when moving, kick when shooting)
+    if (typeof updateViewmodel === 'function') {
+        const mm = gameState.mobileMovement;
+        const moving = gameState.keys['w'] || gameState.keys['a'] ||
+            gameState.keys['s'] || gameState.keys['d'] ||
+            (mm && (Math.abs(mm.x) > 0.1 || Math.abs(mm.y) > 0.1));
+        updateViewmodel(camera, !!moving);
+    }
+
     // Mobile joystick movement
     if (gameState.mobileMovement) {
         const moveX = gameState.mobileMovement.x * speed;
