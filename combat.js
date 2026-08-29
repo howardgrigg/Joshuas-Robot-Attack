@@ -22,13 +22,25 @@ function shoot(scene, camera) {
     updateReloadStatus(weaponConfig);
 }
 
-// Create projectile from camera position
+// Create projectile from the gun's muzzle, aimed at the crosshair
 function createProjectile(scene, camera, weaponType) {
     const weapon = getWeaponConfig(weaponType);
-    const startPosition = camera.position.clone();
-    startPosition.y -= 0.5;
-    const direction = camera.getForwardRay().direction.normalize();
-    
+
+    const forward = camera.getForwardRay().direction.normalize();
+    const right = camera.getDirection(BABYLON.Axis.X);
+    const up = camera.getDirection(BABYLON.Axis.Y);
+
+    // Muzzle position - matches the first-person viewmodel's barrel tip
+    const startPosition = camera.position
+        .add(forward.scale(1.4))
+        .add(right.scale(0.32))
+        .add(up.scale(-0.28));
+
+    // Aim from the muzzle toward the point the crosshair is on, so shots still
+    // converge on where you're looking rather than drifting off to the side.
+    const aimPoint = camera.position.add(forward.scale(300));
+    const direction = aimPoint.subtract(startPosition).normalize();
+
     const projectiles = weapon.createProjectile(scene, startPosition, direction);
     
     projectiles.forEach(projectile => {
