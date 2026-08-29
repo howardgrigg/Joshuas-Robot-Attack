@@ -6,8 +6,12 @@
 
 // Main game update loop
 function updateGame(scene, camera) {
-    const baseSpeed = 20.0; // Units per second (frame rate independent)
-    const deltaTime = scene.getEngine().getDeltaTime() / 1000; // Convert to seconds
+    // Freeze all game logic while paused (e.g. upgrade shop open); scene still renders
+    if (gameState.paused) return;
+
+    const baseSpeed = 20.0 * (gameState.player.speedMult || 1); // Units per second (frame rate independent)
+    // Clamp dt so a long pause / hitch doesn't cause a huge movement step on resume
+    const deltaTime = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.1); // Convert to seconds
     const speed = baseSpeed * deltaTime; // Actual movement per frame
     
     // Note: Boss music is controlled by spawn/death events, not continuous checking
@@ -40,6 +44,13 @@ function updateGame(scene, camera) {
     
     // Update player height based on terrain
     updatePlayerTerrainHeight(scene, camera);
+
+    // Advance the day/night cycle (sun/moon position, lighting, sky colour)
+    updateDayNightCycle(scene, camera);
+
+    // Coins & upgrades
+    updateCoins(scene, camera);
+    updateInvisibility();
     
     // Mobile joystick movement
     if (gameState.mobileMovement) {
@@ -157,7 +168,14 @@ function updateGame(scene, camera) {
         
         // Skip AI if frozen
         if (enemy.isFrozen) return;
-        
+
+        // Player is invisible: robots lose track and just mill about
+        if (typeof isPlayerInvisible === 'function' && isPlayerInvisible() && !enemy.isBoss) {
+            enemy.isMoving = false;
+            animateRobotIdle(enemy);
+            return;
+        }
+
         const distance = BABYLON.Vector3.Distance(enemy.position, camera.position);
         
         // Robot AI: shoot if in range, otherwise move closer
@@ -347,32 +365,15 @@ function updateGame(scene, camera) {
 
 // Update player camera height to follow terrain
 function updatePlayerTerrainHeight(scene, camera) {
-    // Check if player is out of bounds first
-    const maxDistance = 200; // Maximum allowed distance from origin
-    const distanceFromOrigin = Math.sqrt(camera.position.x * camera.position.x + camera.position.z * camera.position.z);
-    
-    if (distanceFromOrigin > maxDistance) {
-        // Player is out of bounds - teleport back to a safe position
-        const angle = Math.atan2(camera.position.z, camera.position.x);
-        const safeDistance = maxDistance * 0.9; // 90% of max distance
-        camera.position.x = Math.cos(angle) * safeDistance;
-        camera.position.z = Math.sin(angle) * safeDistance;
-        camera.position.y = 2.5; // Reset to safe height
-        gameState.player.velocity.y = 0;
-        gameState.player.isOnGround = true;
-        
-        // Apply damage and visual feedback
-        gameState.player.health -= 50;
-        document.getElementById('health').textContent = gameState.player.health;
-        flashDamageScreen();
-        
-        if (gameState.player.health <= 0) {
-            showGameOver();
-        }
-        
-        return; // Exit early after repositioning
-    }
-    
+    // Hard boundary: the ground is 240x240 (centered on origin), so keep the
+    // player inside its edges with a small margin. Clamping instead of teleporting
+    // means you simply can't walk off the landscape.
+    const mapLimit = 116; // half of 240 minus a margin
+    if (camera.position.x > mapLimit) camera.position.x = mapLimit;
+    if (camera.position.x < -mapLimit) camera.position.x = -mapLimit;
+    if (camera.position.z > mapLimit) camera.position.z = mapLimit;
+    if (camera.position.z < -mapLimit) camera.position.z = -mapLimit;
+
     // Create a downward ray from the camera's position
     const rayStart = camera.position.clone();
     rayStart.y += 1; // Start ray slightly above camera

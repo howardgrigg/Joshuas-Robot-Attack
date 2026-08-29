@@ -16,6 +16,14 @@ function setupControls(scene, camera) {
         if (['1', '2', '3', '4', '5'].includes(key)) {
             selectWeaponSlot(parseInt(key) - 1);
         }
+
+        if (key === 'b' && typeof toggleShop === 'function') {
+            toggleShop();
+        }
+
+        if (key === 'q' && typeof activateInvisibility === 'function') {
+            activateInvisibility();
+        }
         
         if (key === ' ' && gameState.player.isOnGround) {
             gameState.player.velocity.y = gameState.player.jumpPower;

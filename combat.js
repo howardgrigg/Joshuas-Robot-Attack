@@ -177,6 +177,7 @@ function checkCollisions(scene) {
 // Handle enemy death
 function handleEnemyDeath(scene, enemy) {
     dropWeapon(scene, enemy.position);
+    if (typeof maybeDropCoins === 'function') maybeDropCoins(scene, enemy);
     
     animateRobotDeath(scene, enemy, () => {
         enemy.dispose();

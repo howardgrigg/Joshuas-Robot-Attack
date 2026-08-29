@@ -9,6 +9,7 @@ const engine = new BABYLON.Engine(canvas, true);
 let gameState = {
     keys: {},
     gameStarted: false,
+    paused: false,
     currentLevel: 1,
     player: {
         health: 200,
@@ -20,8 +21,15 @@ let gameState = {
         jumpPower: 15,
         weaponsCollected: 1,
         invulnerableUntil: 0,
-        lastShot: 0
+        lastShot: 0,
+        maxHealth: 200,
+        speedMult: 1,
+        invisibleUntil: 0,
+        invisibleCharges: 0
     },
+    coins: 0,
+    upgrades: { speedLevel: 0, healthLevel: 0 },
+    coinDrops: [],
     enemies: [],
     projectiles: [],
     enemyProjectiles: [],
@@ -123,6 +131,7 @@ function startGame() {
     initializeSounds(scene);
     initializeLevelSystem();
     createLevel(1);
+    initDayNightCycle(scene);
     createBuddy(scene);
     setupControls(scene, camera);
     setupMobileControls(scene, camera);

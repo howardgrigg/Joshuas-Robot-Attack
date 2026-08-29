@@ -124,6 +124,37 @@ const ENEMY_TYPES = {
     }
 };
 
+// Robot variants - from level 2 onwards each robot spawns as one of these two types.
+// "swift" robots rush the player but go down fast; "heavy" robots are slow but soak damage.
+const ENEMY_VARIANTS = {
+    swift: {
+        name: "Swift",
+        healthMult: 0.45,
+        speedMult: 1.9,
+        sizeMult: 0.8,
+        colors: {
+            body: new BABYLON.Color3(0.2, 0.85, 1.0),
+            emissive: new BABYLON.Color3(0.1, 0.4, 0.55)
+        }
+    },
+    heavy: {
+        name: "Heavy",
+        healthMult: 2.4,
+        speedMult: 0.5,
+        sizeMult: 1.3,
+        colors: {
+            body: new BABYLON.Color3(0.55, 0.35, 0.9),
+            emissive: new BABYLON.Color3(0.2, 0.1, 0.35)
+        }
+    }
+};
+
+// Pick a variant for a newly spawned robot. Returns null before level 2 (default robots).
+function pickEnemyVariant() {
+    if (gameState.currentLevel < 2) return null;
+    return Math.random() < 0.5 ? 'swift' : 'heavy';
+}
+
 // Get current level configuration
 function getCurrentLevelConfig() {
     return LEVEL_CONFIGS[gameState.currentLevel] || LEVEL_CONFIGS[1];
@@ -200,7 +231,8 @@ function advanceToLevel(levelNumber) {
     
     // Clear existing scene objects
     clearLevelObjects();
-    
+    if (typeof clearCoinDrops === 'function') clearCoinDrops();
+
     // Create new level
     createLevel(levelNumber);
     
@@ -208,7 +240,8 @@ function advanceToLevel(levelNumber) {
     updateLevelUI();
     
     // Give player health boost between levels
-    gameState.player.health = Math.min(200, gameState.player.health + 50);
+    const cap = (typeof getPlayerMaxHealth === 'function') ? getPlayerMaxHealth() : 200;
+    gameState.player.health = Math.min(cap, gameState.player.health + 50);
     document.getElementById('health').textContent = gameState.player.health;
 }
 

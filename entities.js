@@ -34,17 +34,21 @@ function findSafeSpawnPosition(playerPosition = new BABYLON.Vector3(0, 0, 0)) {
 }
 
 // Create level-specific enemy robot
-function createLevelEnemy(scene, enemyType) {
+function createLevelEnemy(scene, enemyType, variantKey) {
     const enemyConfig = ENEMY_TYPES[enemyType];
-    const enemy = BABYLON.MeshBuilder.CreateBox("enemy", {size: enemyConfig.size}, scene);
-    
+    if (variantKey === undefined) variantKey = pickEnemyVariant();
+    const variant = variantKey ? ENEMY_VARIANTS[variantKey] : null;
+
+    const enemySize = enemyConfig.size * (variant ? variant.sizeMult : 1);
+    const enemy = BABYLON.MeshBuilder.CreateBox("enemy", {size: enemySize}, scene);
+
     const playerPosition = scene.activeCamera ? scene.activeCamera.position : new BABYLON.Vector3(0, 0, 0);
     const safePosition = findSafeSpawnPosition(playerPosition);
     enemy.position = safePosition;
-    
+
     const material = new BABYLON.StandardMaterial("enemyMaterial", scene);
-    material.diffuseColor = enemyConfig.colors.body;
-    material.emissiveColor = enemyConfig.colors.emissive;
+    material.diffuseColor = variant ? variant.colors.body : enemyConfig.colors.body;
+    material.emissiveColor = variant ? variant.colors.emissive : enemyConfig.colors.emissive;
     enemy.material = material;
     
     // Robot head
@@ -130,13 +134,21 @@ function createLevelEnemy(scene, enemyType) {
         leftFoot, rightFoot
     };
     
+    // Robots that emerge at night are tougher, faster and hit harder.
+    const nightF = (typeof getNightFactor === 'function') ? getNightFactor() : 0;
+    const healthMult = (variant ? variant.healthMult : 1) * (1 + nightF * 0.7);
+    const speedMult = (variant ? variant.speedMult : 1) * (1 + nightF * 0.35);
+    const damageMult = 1 + nightF * 0.6;
+
     // Set enemy properties based on level configuration
-    enemy.health = enemyConfig.health;
-    enemy.maxHealth = enemyConfig.health;
-    enemy.speed = enemyConfig.speed;
-    enemy.originalSpeed = enemyConfig.speed;
-    enemy.attackDamage = enemyConfig.attackDamage;
-    enemy.shootCooldown = enemyConfig.shootCooldown;
+    enemy.variant = variantKey || null;
+    enemy.nightborn = nightF > 0.25;
+    enemy.health = enemyConfig.health * healthMult;
+    enemy.maxHealth = enemy.health;
+    enemy.speed = enemyConfig.speed * speedMult;
+    enemy.originalSpeed = enemy.speed;
+    enemy.attackDamage = enemyConfig.attackDamage * damageMult;
+    enemy.shootCooldown = enemyConfig.shootCooldown * (1 - nightF * 0.25);
     enemy.abilities = enemyConfig.abilities;
     enemy.lastAttack = 0;
     enemy.lastShot = 0;
@@ -158,6 +170,14 @@ function createLevelEnemy(scene, enemyType) {
     enemy.isMoving = false;
     enemy.lastDirection = new BABYLON.Vector3(0, 0, 1);
     
+    // Menacing glow so night-buffed robots read at a glance
+    if (enemy.nightborn) {
+        material.emissiveColor = material.emissiveColor.add(new BABYLON.Color3(0.35, 0.05, 0.05));
+        eyeMaterial.emissiveColor = new BABYLON.Color3(1, 0.15, 0.15);
+        leftEye.scaling.setAll(1.4);
+        rightEye.scaling.setAll(1.4);
+    }
+
     createHealthBar(scene, enemy);
     gameState.enemies.push(enemy);
 }
@@ -470,7 +490,8 @@ function updateBuddy(scene, camera, currentTime) {
     });
     
     // Priority 1: Heal player if close and player needs healing
-    if (distanceToPlayer <= buddy.healRange && gameState.player.health < 200 && currentTime - buddy.lastHeal > 3000) {
+    const playerMaxHp = (typeof getPlayerMaxHealth === 'function') ? getPlayerMaxHealth() : 200;
+    if (distanceToPlayer <= buddy.healRange && gameState.player.health < playerMaxHp && currentTime - buddy.lastHeal > 3000) {
         healPlayer(scene, buddy, currentTime);
     }
     // Priority 2: Attack enemies
@@ -502,7 +523,7 @@ function moveBuddyTowardsPlayer(buddy, playerPosition) {
 }
 
 function healPlayer(scene, buddy, currentTime) {
-    gameState.player.health = Math.min(200, gameState.player.health + 30);
+    gameState.player.health = Math.min((typeof getPlayerMaxHealth === 'function') ? getPlayerMaxHealth() : 200, gameState.player.health + 30);
     document.getElementById('health').textContent = gameState.player.health;
     buddy.lastHeal = currentTime;
     

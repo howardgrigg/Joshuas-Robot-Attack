@@ -1,6 +1,142 @@
 // Terrain and Environment Module
 // Handles terrain generation, trees, obstacles, and weapon chests
 
+// --- Procedural texture helpers ----------------------------------------------
+// The game ships no image assets, so surface detail is painted onto a
+// canvas-backed DynamicTexture once per level and cached on the scene.
+
+function _texCache(scene) {
+    if (!scene.__procTex) scene.__procTex = {};
+    return scene.__procTex;
+}
+
+// Build a tiling speckle/noise texture from a set of options.
+function makeSpeckleTexture(scene, key, opts) {
+    const cache = _texCache(scene);
+    if (cache[key]) return cache[key];
+
+    const size = opts.size || 512;
+    const tex = new BABYLON.DynamicTexture("tex_" + key, size, scene, false);
+    const ctx = tex.getContext();
+
+    ctx.fillStyle = opts.base;
+    ctx.fillRect(0, 0, size, size);
+
+    // Optional panel grid (used for the space floor)
+    if (opts.grid) {
+        ctx.strokeStyle = opts.gridColor || 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = opts.gridWidth || 2;
+        for (let g = 0; g <= size; g += opts.grid) {
+            ctx.beginPath(); ctx.moveTo(g, 0); ctx.lineTo(g, size); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, g); ctx.lineTo(size, g); ctx.stroke();
+        }
+    }
+
+    // Random speckles for grain
+    const spots = opts.spots || 2600;
+    ctx.globalAlpha = opts.alpha != null ? opts.alpha : 0.5;
+    for (let i = 0; i < spots; i++) {
+        const r = opts.minR + Math.random() * (opts.maxR - opts.minR);
+        ctx.fillStyle = opts.shades[(Math.random() * opts.shades.length) | 0];
+        ctx.beginPath();
+        ctx.arc(Math.random() * size, Math.random() * size, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Optional jagged cracks / streaks
+    if (opts.cracks) {
+        ctx.strokeStyle = opts.crackColor || 'rgba(0,0,0,0.22)';
+        ctx.lineWidth = opts.crackWidth || 1.5;
+        for (let i = 0; i < opts.cracks; i++) {
+            let x = Math.random() * size, y = Math.random() * size;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            const segs = 3 + (Math.random() * 4 | 0);
+            for (let s = 0; s < segs; s++) {
+                x += (Math.random() - 0.5) * 110;
+                y += (Math.random() - 0.5) * 110;
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+    }
+
+    tex.update(false);
+    tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    const uv = opts.uv || 1;
+    tex.uScale = uv;
+    tex.vScale = uv;
+    cache[key] = tex;
+    return tex;
+}
+
+const GROUND_TEX_OPTS = {
+    grasslands: { base:'#4b9a33', shades:['#3d7f28','#57ab3c','#2f6b1f','#6cc04b','#8a7d3a'], minR:1, maxR:3.5, spots:4200, alpha:0.55, uv:16 },
+    desert:     { base:'#d9c48a', shades:['#c9b070','#e6d4a0','#bfa460','#efe3bd'], minR:1, maxR:3, spots:3000, alpha:0.5, cracks:45, crackColor:'rgba(120,95,55,0.22)', uv:13 },
+    forest:     { base:'#2c4a1e', shades:['#22391a','#37582a','#18280f','#4a3a20','#574726'], minR:1, maxR:4, spots:4400, alpha:0.6, uv:16 },
+    volcanic:   { base:'#3a1710', shades:['#280f0a','#4a201a','#1c0a08','#6b2b12','#8a3a14'], minR:1, maxR:4, spots:3800, alpha:0.6, cracks:80, crackColor:'rgba(255,120,40,0.32)', crackWidth:2, uv:13 },
+    space:      { base:'#5a5a66', shades:['#4a4a55','#6a6a78','#3f3f48','#7a7a88'], minR:1, maxR:2.5, spots:1600, alpha:0.4, grid:64, uv:6 }
+};
+
+const ROCK_TEX_OPTS = {
+    grasslands: { base:'#8f8f8f', shades:['#787878','#a2a2a2','#666666','#5c6157'], minR:2, maxR:7, spots:900, alpha:0.5, cracks:30, uv:2 },
+    desert:     { base:'#b07d4a', shades:['#9a6a3c','#c48f58','#805530','#d9a56e'], minR:2, maxR:7, spots:850, alpha:0.5, cracks:26, uv:2 },
+    forest:     { base:'#3f5a3a', shades:['#2f4a2c','#4f6a48','#5a5a3a','#6a7a3a','#7d7d55'], minR:2, maxR:8, spots:1000, alpha:0.55, cracks:20, uv:2 },
+    volcanic:   { base:'#2a1a1a', shades:['#180f0f','#3a2020','#4a2515','#0f0a0a'], minR:2, maxR:8, spots:1000, alpha:0.6, cracks:40, crackColor:'rgba(255,90,30,0.28)', uv:2 }
+};
+
+// Shared textured ground material for a theme.
+function themeGroundMaterial(scene, theme) {
+    const cache = _texCache(scene);
+    const matKey = "mat_ground_" + theme;
+    if (cache[matKey]) return cache[matKey];
+
+    const tex = makeSpeckleTexture(scene, "ground_" + theme, GROUND_TEX_OPTS[theme] || GROUND_TEX_OPTS.grasslands);
+    const mat = new BABYLON.StandardMaterial(matKey, scene);
+    mat.diffuseTexture = tex;
+    mat.specularColor = theme === 'space'
+        ? new BABYLON.Color3(0.35, 0.35, 0.42)
+        : new BABYLON.Color3(0.03, 0.03, 0.03);
+    if (theme === 'volcanic') mat.emissiveColor = new BABYLON.Color3(0.09, 0.02, 0.01);
+    if (theme === 'space') mat.emissiveColor = new BABYLON.Color3(0.06, 0.06, 0.12);
+    cache[matKey] = mat;
+    return mat;
+}
+
+// Bark material for fallen logs (streaky vertical grain).
+function forestBarkMaterial(scene) {
+    const cache = _texCache(scene);
+    if (cache.mat_bark) return cache.mat_bark;
+    const tex = makeSpeckleTexture(scene, "bark", {
+        base:'#3a220f', shades:['#2a1808','#4a2c15','#1e1206','#573620'],
+        minR:1, maxR:2.5, spots:2600, alpha:0.55, cracks:120,
+        crackColor:'rgba(20,10,4,0.35)', crackWidth:2, uv:1
+    });
+    tex.uScale = 1; tex.vScale = 4; // stretch grain along the log
+    const mat = new BABYLON.StandardMaterial("mat_bark", scene);
+    mat.diffuseTexture = tex;
+    mat.specularColor = new BABYLON.Color3(0.03, 0.03, 0.03);
+    cache.mat_bark = mat;
+    return mat;
+}
+
+// Shared textured rock material for a theme.
+function themeRockMaterial(scene, theme) {
+    const cache = _texCache(scene);
+    const matKey = "mat_rock_" + theme;
+    if (cache[matKey]) return cache[matKey];
+
+    const tex = makeSpeckleTexture(scene, "rock_" + theme, ROCK_TEX_OPTS[theme] || ROCK_TEX_OPTS.grasslands);
+    const mat = new BABYLON.StandardMaterial(matKey, scene);
+    mat.diffuseTexture = tex;
+    mat.specularColor = new BABYLON.Color3(0.06, 0.06, 0.06);
+    if (theme === 'volcanic') mat.emissiveColor = new BABYLON.Color3(0.08, 0.03, 0.02);
+    cache[matKey] = mat;
+    return mat;
+}
+
 // Create level-specific terrain based on theme
 function createLevelTerrain(scene, theme) {
     switch (theme) {
@@ -33,9 +169,7 @@ function createTerrain(scene) {
 function createGrasslandsTerrain(scene) {
     // Main grass ground
     const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 240, height: 240}, scene);
-    const grassMaterial = new BABYLON.StandardMaterial("grassMaterial", scene);
-    grassMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.7, 0.2);
-    mainGround.material = grassMaterial;
+    mainGround.material = themeGroundMaterial(scene, 'grasslands');
     mainGround.checkCollisions = true;
     
     // Rolling green hills
@@ -53,9 +187,7 @@ function createGrasslandsTerrain(scene) {
         const scaledHeight = radius * yScale;
         hill.position.y = -scaledHeight * 0.6; // Bury 60% of the hill, leaving 40% above ground
         
-        const hillMaterial = new BABYLON.StandardMaterial("hillMaterial" + i, scene);
-        hillMaterial.diffuseColor = new BABYLON.Color3(0.25, 0.6, 0.18);
-        hill.material = hillMaterial;
+        hill.material = themeGroundMaterial(scene, 'grasslands');
         hill.checkCollisions = true;
         
         // Add hills to obstacles array for robot AI
@@ -73,9 +205,7 @@ function createGrasslandsTerrain(scene) {
         rock.position.z = Math.random() * 150 - 75;
         rock.position.y = rock.scaling.y / 2;
         
-        const rockMaterial = new BABYLON.StandardMaterial("rockMaterial" + i, scene);
-        rockMaterial.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.6);
-        rock.material = rockMaterial;
+        rock.material = themeRockMaterial(scene, 'grasslands');
         rock.checkCollisions = true;
         
         gameState.obstacles.push({
@@ -101,9 +231,7 @@ function createGrasslandsTerrain(scene) {
 function createDesertTerrain(scene) {
     // Sandy ground
     const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 240, height: 240}, scene);
-    const sandMaterial = new BABYLON.StandardMaterial("sandMaterial", scene);
-    sandMaterial.diffuseColor = new BABYLON.Color3(0.9, 0.8, 0.6);
-    mainGround.material = sandMaterial;
+    mainGround.material = themeGroundMaterial(scene, 'desert');
     mainGround.checkCollisions = true;
     
     // Sand dunes
@@ -121,9 +249,7 @@ function createDesertTerrain(scene) {
         const scaledHeight = radius * yScale;
         dune.position.y = -scaledHeight * 0.7; // Bury 70% of the dune, leaving 30% above ground
         
-        const duneMaterial = new BABYLON.StandardMaterial("duneMaterial" + i, scene);
-        duneMaterial.diffuseColor = new BABYLON.Color3(0.85, 0.75, 0.55);
-        dune.material = duneMaterial;
+        dune.material = themeGroundMaterial(scene, 'desert');
         dune.checkCollisions = true;
         
         // Add dunes to obstacles array for robot AI
@@ -142,9 +268,7 @@ function createDesertTerrain(scene) {
         rock.position.y = rock.scaling.y / 2;
         rock.scaling.y = Math.random() * 0.8 + 0.5;
         
-        const rockMaterial = new BABYLON.StandardMaterial("rockMaterial" + i, scene);
-        rockMaterial.diffuseColor = new BABYLON.Color3(0.7, 0.5, 0.3);
-        rock.material = rockMaterial;
+        rock.material = themeRockMaterial(scene, 'desert');
         rock.checkCollisions = true;
         
         gameState.obstacles.push({
@@ -176,9 +300,7 @@ function createDesertTerrain(scene) {
 function createForestTerrain(scene) {
     // Dark forest ground
     const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 240, height: 240}, scene);
-    const forestMaterial = new BABYLON.StandardMaterial("forestMaterial", scene);
-    forestMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.3, 0.1);
-    mainGround.material = forestMaterial;
+    mainGround.material = themeGroundMaterial(scene, 'forest');
     mainGround.checkCollisions = true;
     
     // Dense forest with many trees
@@ -202,9 +324,7 @@ function createForestTerrain(scene) {
         log.rotation.z = Math.PI / 2; // Lay it horizontally
         log.rotation.y = Math.random() * Math.PI;
         
-        const logMaterial = new BABYLON.StandardMaterial("logMaterial" + i, scene);
-        logMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.15, 0.05);
-        log.material = logMaterial;
+        log.material = forestBarkMaterial(scene);
         log.checkCollisions = true;
         
         gameState.obstacles.push({
@@ -221,9 +341,7 @@ function createForestTerrain(scene) {
         rock.position.z = Math.random() * 170 - 85;
         rock.position.y = rock.scaling.y / 2;
         
-        const rockMaterial = new BABYLON.StandardMaterial("rockMaterial" + i, scene);
-        rockMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.4, 0.2);
-        rock.material = rockMaterial;
+        rock.material = themeRockMaterial(scene, 'forest');
         rock.checkCollisions = true;
         
         gameState.obstacles.push({
@@ -237,10 +355,7 @@ function createForestTerrain(scene) {
 function createVolcanicTerrain(scene) {
     // Volcanic rock ground
     const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 240, height: 240}, scene);
-    const volcMaterial = new BABYLON.StandardMaterial("volcMaterial", scene);
-    volcMaterial.diffuseColor = new BABYLON.Color3(0.3, 0.1, 0.05);
-    volcMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.02, 0.01);
-    mainGround.material = volcMaterial;
+    mainGround.material = themeGroundMaterial(scene, 'volcanic');
     mainGround.checkCollisions = true;
     
     // Lava pools
@@ -265,10 +380,7 @@ function createVolcanicTerrain(scene) {
         rock.position.y = rock.scaling.y / 2;
         rock.scaling.y = Math.random() * 1.2 + 0.8;
         
-        const rockMaterial = new BABYLON.StandardMaterial("rockMaterial" + i, scene);
-        rockMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.1, 0.1);
-        rockMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.05, 0.02);
-        rock.material = rockMaterial;
+        rock.material = themeRockMaterial(scene, 'volcanic');
         rock.checkCollisions = true;
         
         gameState.obstacles.push({
@@ -300,10 +412,7 @@ function createVolcanicTerrain(scene) {
 function createSpaceTerrain(scene) {
     // Metallic floor
     const mainGround = BABYLON.MeshBuilder.CreateGround("mainGround", {width: 240, height: 240}, scene);
-    const metalMaterial = new BABYLON.StandardMaterial("metalMaterial", scene);
-    metalMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.5);
-    metalMaterial.specularColor = new BABYLON.Color3(0.8, 0.8, 0.9);
-    mainGround.material = metalMaterial;
+    mainGround.material = themeGroundMaterial(scene, 'space');
     mainGround.checkCollisions = true;
     
     // Tech platforms
@@ -345,42 +454,96 @@ function createSpaceTerrain(scene) {
     }
 }
 
-// Create tree with trunk and leaves
+// Create a leafy broadleaf tree: tapered trunk + a clustered, layered canopy.
 function createTree(scene, x, z) {
-    const trunk = BABYLON.MeshBuilder.CreateCylinder("trunk", {height: 12, diameter: 2.5}, scene);
-    trunk.position = new BABYLON.Vector3(x, 6, z);
-    
+    const scale = 0.75 + Math.random() * 0.6;      // size variety
+    const tint = (Math.random() - 0.5) * 0.12;      // per-tree green shift
+
+    // Tapered trunk (wider at the base)
+    const trunkH = 11 * scale;
+    const trunk = BABYLON.MeshBuilder.CreateCylinder("trunk", {
+        height: trunkH,
+        diameterTop: 1.0 * scale,
+        diameterBottom: 2.2 * scale,
+        tessellation: 8
+    }, scene);
+    trunk.position = new BABYLON.Vector3(x, trunkH / 2, z);
+    trunk.rotation.y = Math.random() * Math.PI;
+
     const trunkMaterial = new BABYLON.StandardMaterial("trunkMaterial", scene);
-    trunkMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.2, 0.1);
+    trunkMaterial.diffuseColor = new BABYLON.Color3(0.36, 0.24, 0.14);
+    trunkMaterial.specularColor = new BABYLON.Color3(0.05, 0.04, 0.03);
     trunk.material = trunkMaterial;
     trunk.checkCollisions = true;
-    
-    const leaves = BABYLON.MeshBuilder.CreateSphere("leaves", {diameter: 8}, scene);
-    leaves.position = new BABYLON.Vector3(x, 14, z);
-    
+
+    // Shared canopy material
     const leavesMaterial = new BABYLON.StandardMaterial("leavesMaterial", scene);
-    leavesMaterial.diffuseColor = new BABYLON.Color3(0.1, 0.6, 0.1);
-    leaves.material = leavesMaterial;
-    leaves.checkCollisions = true;
+    leavesMaterial.diffuseColor = new BABYLON.Color3(0.14 + tint, 0.5 + tint, 0.14 + tint);
+    leavesMaterial.specularColor = new BABYLON.Color3(0.03, 0.06, 0.03);
+    leavesMaterial.emissiveColor = new BABYLON.Color3(0.02, 0.07, 0.02);
+
+    // Overlapping blobs make a fuller, less geometric canopy
+    const canopyY = trunkH + 1.5 * scale;
+    const blobs = [
+        { dx: 0.0,  dy: 0.0,  d: 8.4 },
+        { dx: 2.4,  dz: 0.6,  dy: -1.4, d: 5.6 },
+        { dx: -2.3, dz: -0.8, dy: -1.0, d: 5.8 },
+        { dx: 0.4,  dz: 2.2,  dy: -1.6, d: 5.2 },
+        { dx: -0.6, dz: -1.8, dy: 2.2,  d: 6.0 }
+    ];
+    blobs.forEach(b => {
+        const leaf = BABYLON.MeshBuilder.CreateSphere("leaves", { diameter: b.d * scale, segments: 6 }, scene);
+        leaf.position = new BABYLON.Vector3(
+            x + (b.dx || 0) * scale,
+            canopyY + (b.dy || 0) * scale,
+            z + (b.dz || 0) * scale
+        );
+        leaf.scaling.y = 0.85;
+        leaf.material = leavesMaterial;
+    });
 }
 
-// Create dark forest tree with different styling
+// Create a dark forest conifer: slim trunk + stacked drooping cone tiers.
 function createDarkTree(scene, x, z) {
-    const trunk = BABYLON.MeshBuilder.CreateCylinder("trunk", {height: 15, diameter: 3}, scene);
-    trunk.position = new BABYLON.Vector3(x, 7.5, z);
-    
+    const scale = 0.9 + Math.random() * 0.7;
+
+    const trunkH = 6 * scale;
+    const trunk = BABYLON.MeshBuilder.CreateCylinder("trunk", {
+        height: trunkH,
+        diameterTop: 0.9 * scale,
+        diameterBottom: 1.8 * scale,
+        tessellation: 8
+    }, scene);
+    trunk.position = new BABYLON.Vector3(x, trunkH / 2, z);
+
     const trunkMaterial = new BABYLON.StandardMaterial("darkTrunkMaterial", scene);
-    trunkMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.1, 0.05);
+    trunkMaterial.diffuseColor = new BABYLON.Color3(0.16, 0.09, 0.05);
+    trunkMaterial.specularColor = new BABYLON.Color3(0.03, 0.02, 0.02);
     trunk.material = trunkMaterial;
     trunk.checkCollisions = true;
-    
-    const leaves = BABYLON.MeshBuilder.CreateSphere("leaves", {diameter: 12}, scene);
-    leaves.position = new BABYLON.Vector3(x, 18, z);
-    
+
     const leavesMaterial = new BABYLON.StandardMaterial("darkLeavesMaterial", scene);
-    leavesMaterial.diffuseColor = new BABYLON.Color3(0.05, 0.2, 0.05);
-    leaves.material = leavesMaterial;
-    leaves.checkCollisions = true;
+    leavesMaterial.diffuseColor = new BABYLON.Color3(0.05, 0.22, 0.08);
+    leavesMaterial.specularColor = new BABYLON.Color3(0.0, 0.0, 0.0);
+    leavesMaterial.emissiveColor = new BABYLON.Color3(0.02, 0.06, 0.03);
+
+    // Three overlapping cone tiers, widest at the bottom
+    const tiers = [
+        { y: trunkH - 0.5 * scale, d: 9.0, h: 8.0 },
+        { y: trunkH + 3.5 * scale, d: 7.0, h: 7.0 },
+        { y: trunkH + 7.0 * scale, d: 4.6, h: 6.0 }
+    ];
+    tiers.forEach(t => {
+        const cone = BABYLON.MeshBuilder.CreateCylinder("leaves", {
+            diameterTop: 0,
+            diameterBottom: t.d * scale,
+            height: t.h * scale,
+            tessellation: 8
+        }, scene);
+        cone.position = new BABYLON.Vector3(x, t.y + (t.h * scale) / 2 - 1.5 * scale, z);
+        cone.rotation.y = Math.random() * Math.PI;
+        cone.material = leavesMaterial;
+    });
 }
 
 // Create weapon storage chest

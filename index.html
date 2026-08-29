@@ -119,6 +119,16 @@
         #damageOverlay.flash {
             animation: damageFlash 0.3s ease-out;
         }
+
+        #gameCanvas {
+            transition: filter 0.3s ease;
+        }
+        body.invisible-active #gameCanvas {
+            filter: brightness(1.15) contrast(0.9) hue-rotate(-15deg);
+        }
+        body.invisible-active #ui {
+            box-shadow: 0 0 0 2px rgba(120, 220, 255, 0.6);
+        }
         
         #reloadStatus.reloading {
             color: #ff6b6b;
@@ -325,10 +335,12 @@
         <div>Kills: <span id="killCount">0</span></div>
         <div>Enemies: <span id="enemyCount">0</span></div>
         <div>Weapons: <span id="weaponCount">1/50</span></div>
+        <div>🪙 Coins: <span id="coinCount">0</span></div>
+        <div>Invisibility: <span id="invisStatus">0 charge(s) [Q]</span></div>
         <div id="weaponDescription" style="font-size: 14px; color: #4ecdc4; margin-top: 10px; max-width: 300px;">Your trusty starting blaster - reliable and ready for robot battles!</div>
     </div>
     <div id="instructions" style="display: none;">
-        Kill robots to collect new weapons! | Keys 1-5: Switch Weapons
+        Kill robots to collect new weapons! | Keys 1-5: Switch Weapons | B: Upgrade Shop | Q: Invisibility
     </div>
     
     <!-- Mobile Controls -->
@@ -366,6 +378,8 @@
     <script src="combat.js"></script>
     <script src="ai.js"></script>
     <script src="levels.js"></script>
+    <script src="daynight.js"></script>
+    <script src="coins.js"></script>
     <script src="ui.js"></script>
     <script src="game-new.js"></script>
 </body>
