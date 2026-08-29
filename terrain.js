@@ -65,6 +65,7 @@ function makeSpeckleTexture(scene, key, opts) {
     tex.update(false);
     tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
     tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    tex.anisotropicFilteringLevel = 8; // sharper at grazing angles (ground plane)
     const uv = opts.uv || 1;
     tex.uScale = uv;
     tex.vScale = uv;
@@ -480,7 +481,7 @@ function createTree(scene, x, z) {
     const leavesMaterial = new BABYLON.StandardMaterial("leavesMaterial", scene);
     leavesMaterial.diffuseColor = new BABYLON.Color3(0.14 + tint, 0.5 + tint, 0.14 + tint);
     leavesMaterial.specularColor = new BABYLON.Color3(0.03, 0.06, 0.03);
-    leavesMaterial.emissiveColor = new BABYLON.Color3(0.02, 0.07, 0.02);
+    leavesMaterial.emissiveColor = new BABYLON.Color3(0.008, 0.025, 0.008);
 
     // Overlapping blobs make a fuller, less geometric canopy
     const canopyY = trunkH + 1.5 * scale;
@@ -525,7 +526,7 @@ function createDarkTree(scene, x, z) {
     const leavesMaterial = new BABYLON.StandardMaterial("darkLeavesMaterial", scene);
     leavesMaterial.diffuseColor = new BABYLON.Color3(0.05, 0.22, 0.08);
     leavesMaterial.specularColor = new BABYLON.Color3(0.0, 0.0, 0.0);
-    leavesMaterial.emissiveColor = new BABYLON.Color3(0.02, 0.06, 0.03);
+    leavesMaterial.emissiveColor = new BABYLON.Color3(0.01, 0.03, 0.015);
 
     // Three overlapping cone tiers, widest at the bottom
     const tiers = [

@@ -167,7 +167,9 @@ function animateRobotDeath(scene, enemy, callback) {
     
     enemy.isDying = true;
     enemy.speed = 0;
-    
+
+    if (typeof spawnDeathExplosion === 'function') spawnDeathExplosion(scene, enemy.position);
+
     // Create explosion effect
     const explosion = BABYLON.MeshBuilder.CreateSphere("explosion", {diameter: 6}, scene);
     explosion.position = enemy.position.clone();

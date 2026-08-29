@@ -99,11 +99,14 @@ function isPlayerInvisible() {
 // --- Coin drops -------------------------------------------------------------
 
 function maybeDropCoins(scene, enemy) {
-    // Only the fast "swift" variant drops coins
-    if (!enemy || enemy.variant !== 'swift') return;
-    if (Math.random() > COIN_CONFIG.dropChance) return;
+    // Every robot drops coins, on every level. Bosses are handled separately.
+    if (!enemy || enemy.isBoss) return;
 
-    const count = 1 + (Math.random() < 0.4 ? 1 : 0);
+    // Swift robots are the "coin" type and pay a little extra; heavy robots too
+    let count = 1 + (Math.random() < 0.4 ? 1 : 0);
+    if (enemy.variant === 'swift') count += 1;
+    if (enemy.variant === 'heavy') count += 1;
+
     for (let i = 0; i < count; i++) {
         const value = COIN_CONFIG.valueMin +
             Math.floor(Math.random() * (COIN_CONFIG.valueMax - COIN_CONFIG.valueMin + 1));
@@ -159,6 +162,9 @@ function updateCoins(scene, camera) {
             gameState.coins += coin.coinValue;
             updateCoinHUD();
             playCoinSound();
+            if (typeof spawnHitSparks === 'function') {
+                spawnHitSparks(scene, coin.position, new BABYLON.Color3(1, 0.85, 0.25));
+            }
             coin.dispose();
             gameState.coinDrops.splice(i, 1);
             continue;
@@ -255,9 +261,10 @@ function toggleShop() {
     const existing = document.getElementById('shopInterface');
     if (existing && existing.style.display === 'block') {
         closeShop();
-    } else {
-        openShop();
+        return;
     }
+    if (gameState.paused) return; // something else (inventory) is open
+    openShop();
 }
 
 function openShop() {

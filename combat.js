@@ -14,6 +14,7 @@ function shoot(scene, camera) {
     }
     
     createProjectile(scene, camera, weapon);
+    if (typeof spawnMuzzleFlash === 'function') spawnMuzzleFlash(scene, camera);
     playWeaponSound(weapon);
     gameState.player.lastShot = currentTime;
     
@@ -209,13 +210,15 @@ function handleEnemyDeath(scene, enemy) {
 function createHitEffect(scene, position) {
     const effect = BABYLON.MeshBuilder.CreateSphere("effect", {diameter: 2}, scene);
     effect.position = position.clone();
-    
+
     const material = new BABYLON.StandardMaterial("effectMaterial", scene);
     material.diffuseColor = new BABYLON.Color3(1, 1, 0);
     material.emissiveColor = new BABYLON.Color3(1, 1, 0);
     effect.material = material;
-    
+
     setTimeout(() => effect.dispose(), 200);
+
+    if (typeof spawnHitSparks === 'function') spawnHitSparks(scene, position);
 }
 
 // Visual damage feedback
@@ -223,11 +226,12 @@ function flashDamageScreen() {
     const overlay = document.getElementById('damageOverlay');
     if (overlay) {
         overlay.classList.add('flash');
-        
+
         setTimeout(() => {
             overlay.classList.remove('flash');
         }, 300);
     }
+    if (typeof addScreenShake === 'function') addScreenShake(0.045);
 }
 
 // Update reload status UI

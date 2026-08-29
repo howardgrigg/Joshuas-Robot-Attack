@@ -132,6 +132,7 @@ function startGame() {
     initializeLevelSystem();
     createLevel(1);
     initDayNightCycle(scene);
+    initGraphics(scene, camera);
     createBuddy(scene);
     setupControls(scene, camera);
     setupMobileControls(scene, camera);

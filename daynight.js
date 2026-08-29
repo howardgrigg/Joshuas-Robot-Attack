@@ -72,6 +72,9 @@ function initDayNightCycle(scene) {
     moon.isPickable = false;
     DayNight.moon = moon;
 
+    // Sky bodies must not be dimmed by distance fog
+    [sun, halo, moon].forEach(m => { m.applyFog = false; });
+
     DayNight.initialized = true;
     updateDayNightCycle(scene, scene.activeCamera);
 }
@@ -86,10 +89,12 @@ function updateDayNightCycle(scene, camera) {
     const sinP = Math.sin(phase);   // elevation, +1 noon, -1 midnight
     const cosP = Math.cos(phase);   // east/west travel
 
-    // Sun / moon positions, kept relative to the camera so they stay "in the sky"
+    // Sun / moon positions, kept relative to the camera so they stay "in the sky".
+    // The big Z offset tilts the whole arc so the sun stays at a raking angle
+    // even at midday - that keeps object shadows long enough to read all day.
     const R = DayNight.orbitRadius;
-    const sunOffset = new BABYLON.Vector3(cosP * R, sinP * R, 90);
-    const moonOffset = new BABYLON.Vector3(-cosP * R, -sinP * R, 90);
+    const sunOffset = new BABYLON.Vector3(cosP * R, sinP * R * 0.82, 235);
+    const moonOffset = new BABYLON.Vector3(-cosP * R, -sinP * R * 0.82, 235);
 
     DayNight.sun.position = camera.position.add(sunOffset);
     DayNight.moon.position = camera.position.add(moonOffset);
@@ -100,28 +105,34 @@ function updateDayNightCycle(scene, camera) {
     const dayFactor = Math.max(0, sinP);
     const light = Math.pow(dayFactor, 0.6);
 
-    // The single directional light doubles as sunlight by day and moonlight by night
+    // The single directional light doubles as sunlight by day and moonlight by
+    // night. It carries most of the scene light so its shadows stay readable.
     if (sinP > 0) {
         DayNight.sunLight.direction = sunOffset.scale(-1).normalize();
-        DayNight.sunLight.intensity = 0.05 + light * 1.15;
+        DayNight.sunLight.intensity = 0.15 + light * 1.35;
         DayNight.sunLight.diffuse = BABYLON.Color3.Lerp(
             new BABYLON.Color3(1.0, 0.55, 0.3),   // warm at the horizon
-            new BABYLON.Color3(1.0, 0.98, 0.92),  // white at noon
+            new BABYLON.Color3(1.0, 0.97, 0.9),   // near-white at noon
             Math.min(1, dayFactor * 2)
         );
     } else {
         const moonUp = Math.max(0, -sinP);
         DayNight.sunLight.direction = moonOffset.scale(-1).normalize();
-        DayNight.sunLight.intensity = 0.12 + moonUp * 0.3;
+        DayNight.sunLight.intensity = 0.15 + moonUp * 0.4;
         DayNight.sunLight.diffuse = new BABYLON.Color3(0.5, 0.6, 0.85); // cool moonlight
     }
 
-    // Ambient fill: dim blue at night, bright by day
+    // Ambient fill: kept moderate so the sun's shadows read; floor keeps night playable
     if (DayNight.ambientLight) {
-        DayNight.ambientLight.intensity = 0.16 + light * 0.82;
+        DayNight.ambientLight.intensity = 0.34 + light * 0.34;
         DayNight.ambientLight.diffuse = BABYLON.Color3.Lerp(
-            new BABYLON.Color3(0.32, 0.38, 0.62),
+            new BABYLON.Color3(0.4, 0.46, 0.68),
             new BABYLON.Color3(1, 1, 1),
+            light
+        );
+        DayNight.ambientLight.groundColor = BABYLON.Color3.Lerp(
+            new BABYLON.Color3(0.12, 0.14, 0.2),
+            new BABYLON.Color3(0.45, 0.42, 0.38),
             light
         );
     }
@@ -132,8 +143,8 @@ function updateDayNightCycle(scene, camera) {
         : new BABYLON.Color3(0.4, 0.7, 0.95);
 
     let sky = BABYLON.Color3.Lerp(DayNight.nightSky, daySky, Math.pow(dayFactor, 0.5));
-    const sunsetAmount = (sinP > -0.15) ? Math.max(0, 1 - dayFactor * 3.5) : 0;
-    sky = BABYLON.Color3.Lerp(sky, DayNight.sunsetSky, sunsetAmount * 0.55);
+    const sunsetAmount = (sinP > -0.1) ? Math.max(0, 1 - dayFactor * 4.5) : 0;
+    sky = BABYLON.Color3.Lerp(sky, DayNight.sunsetSky, sunsetAmount * 0.3);
     scene.clearColor = sky;
 
     // Sun tint shifts orange as it sinks
@@ -143,4 +154,15 @@ function updateDayNightCycle(scene, camera) {
         Math.min(1, dayFactor * 2)
     );
     DayNight.moon.material.emissiveColor = new BABYLON.Color3(0.72, 0.76, 0.9);
+
+    // Hand the current sky state to the graphics module (sky dome, stars, shadows)
+    if (typeof onDayNightUpdate === 'function') {
+        onDayNightUpdate(scene, camera, {
+            sky: sky,
+            horizon: BABYLON.Color3.Lerp(sky, DayNight.sunsetSky, sunsetAmount * 0.35 + 0.04),
+            dayFactor: dayFactor,
+            nightFactor: Math.max(0, -sinP),
+            sunUp: sinP > 0
+        });
+    }
 }

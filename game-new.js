@@ -48,6 +48,9 @@ function updateGame(scene, camera) {
     // Advance the day/night cycle (sun/moon position, lighting, sky colour)
     updateDayNightCycle(scene, camera);
 
+    // Graphics upkeep (shadow casters, etc.)
+    if (typeof graphicsUpdate === 'function') graphicsUpdate(scene, camera);
+
     // Coins & upgrades
     updateCoins(scene, camera);
     updateInvisibility();
@@ -288,11 +291,14 @@ function updateGame(scene, camera) {
         const distance = BABYLON.Vector3.Distance(drop.position, camera.position);
         
         if (distance < 3) {
-            if (addWeaponToHUD(drop.weaponName)) {
-                // Weapon was successfully added
-                drop.dispose();
-                gameState.weaponDrops.splice(i, 1);
+            // collectWeapon returns false if we already own it; either way, take the box
+            if (typeof collectWeapon === 'function') {
+                collectWeapon(drop.weaponName);
+            } else {
+                addWeaponToHUD(drop.weaponName);
             }
+            drop.dispose();
+            gameState.weaponDrops.splice(i, 1);
         }
     }
     

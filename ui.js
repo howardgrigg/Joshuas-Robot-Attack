@@ -24,6 +24,10 @@ function setupControls(scene, camera) {
         if (key === 'q' && typeof activateInvisibility === 'function') {
             activateInvisibility();
         }
+
+        if (key === 'e' && !event.repeat && typeof toggleInventory === 'function') {
+            toggleInventory();
+        }
         
         if (key === ' ' && gameState.player.isOnGround) {
             gameState.player.velocity.y = gameState.player.jumpPower;

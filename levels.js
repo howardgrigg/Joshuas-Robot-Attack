@@ -264,7 +264,10 @@ function createLevel(levelNumber) {
     
     // Create level-specific terrain
     createLevelTerrain(scene, levelConfig.theme);
-    
+
+    // Wire new terrain into the shadow system
+    if (typeof refreshSceneGraphics === 'function') refreshSceneGraphics(scene);
+
     // Spawn initial enemies for this level (counted toward level requirement)
     const initialEnemyCount = Math.min(levelConfig.maxEnemies, 2); // Start with 2 enemies
     gameState.enemiesSpawned += initialEnemyCount; // Count them immediately
